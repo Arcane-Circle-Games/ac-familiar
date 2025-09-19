@@ -49,11 +49,12 @@ export class UserService {
   public async getUserByDiscordId(discordId: string): Promise<User> {
     try {
       logInfo('Fetching user by Discord ID', { discordId });
-      
-      const response = await apiClient.get<{found: boolean, user: User}>(`/users/discord/${discordId}`);
 
-      if (response.data && response.data.found && response.data.user) {
-        return response.data.user;
+      // Use the authentication method which has caching
+      const authResult = await apiClient.authenticateWithDiscord(discordId);
+
+      if (authResult.success && authResult.data) {
+        return authResult.data as User;
       }
 
       throw new Error('User not found or not linked');

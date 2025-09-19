@@ -20,22 +20,43 @@ export const linkCommand: Command = {
 
       // Check if user is already linked
       try {
-        const existingUser = await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
+        const authResult = await arcaneAPI.authenticateWithDiscord(interaction.user.id);
 
-        if (existingUser) {
+        if (authResult.success && authResult.data) {
+          const existingUser = authResult.data;
           const embed = new EmbedBuilder()
             .setColor(0x00FF00)
             .setTitle('✅ Already Linked')
-            .setDescription(`Your Discord account is already linked to **${existingUser.displayName || existingUser.username}** on Arcane Circle.`)
+            .setDescription(`Your Discord account is already linked to your Arcane Circle account.`)
             .addFields(
               {
-                name: '👤 Platform Username',
-                value: existingUser.displayName || existingUser.username || 'Not provided',
+                name: '👤 Display Name',
+                value: existingUser.displayName || 'Not set',
                 inline: true
               },
               {
                 name: '📧 Email',
                 value: existingUser.email || 'Not provided',
+                inline: true
+              },
+              {
+                name: '🎭 GM Status',
+                value: existingUser.isGM ? '✅ Game Master' : '❌ Player Only',
+                inline: true
+              },
+              {
+                name: '🆔 User ID',
+                value: existingUser.id,
+                inline: true
+              },
+              {
+                name: '🎮 Discord Username',
+                value: existingUser.discordUsername || 'Not set',
+                inline: true
+              },
+              {
+                name: '🔗 Discord ID',
+                value: existingUser.discordId || 'Not set',
                 inline: true
               }
             )

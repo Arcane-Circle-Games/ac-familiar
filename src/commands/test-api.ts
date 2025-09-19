@@ -41,11 +41,20 @@ export const testApiCommand: Command = {
       // Test authentication
       try {
         const authResult = await arcaneAPI.authenticateWithDiscord(interaction.user.id);
-        embed.addFields({
-          name: '🔐 Discord Auth',
-          value: authResult.success ? 'Authentication successful' : 'Authentication failed',
-          inline: true
-        });
+        if (authResult.success && authResult.data) {
+          const user = authResult.data;
+          embed.addFields({
+            name: '🔐 Discord Auth',
+            value: `✅ Authenticated as **${user.displayName || user.email}**${user.isGM ? ' (GM)' : ''}`,
+            inline: true
+          });
+        } else {
+          embed.addFields({
+            name: '🔐 Discord Auth',
+            value: 'Authentication failed',
+            inline: true
+          });
+        }
       } catch (error) {
         embed.addFields({
           name: '🔐 Discord Auth',

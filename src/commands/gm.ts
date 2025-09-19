@@ -575,7 +575,7 @@ async function handleGameList(interaction: ChatInputCommandInteraction) {
     if (typeFilter !== 'all') params.gameType = typeFilter;
     
     const games = await arcaneAPI.games.listGames(params);
-    
+
     if (!games || games.length === 0) {
       const embed = new EmbedBuilder()
         .setColor(0xFFAA00)
