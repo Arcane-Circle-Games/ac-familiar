@@ -4,36 +4,28 @@ import { logInfo, logError } from '../../utils/logger';
 export interface GameCreateData {
   title: string;
   description: string;
+  shortDescription: string;
   gameType: string;
-  system: string;
+  systemId: string;
   maxPlayers: number;
-  pricePerPlayer: number;
-  sessionDuration: number;
-  safetyTools: string[];
-  contentWarnings: string[];
-  experience: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'ALL_LEVELS';
-  scheduleType: 'RECURRING' | 'ONE_SHOT';
-  recurringSchedule?: {
-    dayOfWeek: number;
-    startTime: string;
-    endTime: string;
-    timezone: string;
-  };
-  oneTimeSchedule?: {
-    dateTime: string;
-    timezone: string;
-  };
+  pricePerSession: number;
+  timezone: string;
+  contentWarnings?: string[];
+  gmId: string;
 }
 
 export interface Game {
   id: string;
   title: string;
   description: string;
+  shortDescription: string;
   gameType: string;
-  system: string;
+  system: any; // Can be string or object with name/shortName
+  gm: any; // Can be string or object with displayName
   maxPlayers: number;
-  pricePerPlayer: number;
-  sessionDuration: number;
+  currentPlayers?: number;
+  pricePerSession: number;
+  currency?: string;
   status: string;
   gmId: string;
   createdAt: string;
@@ -118,6 +110,7 @@ export class GameService {
     status?: string;
     gameType?: string;
     system?: string;
+    gmId?: string;
     page?: number;
     limit?: number;
   }) {
@@ -127,6 +120,25 @@ export class GameService {
       return response.data!.data;
     } catch (error) {
       logError('Failed to fetch games list', error as Error, { filters });
+      throw error;
+    }
+  }
+  
+  // Update game status (publish/unpublish)
+  public async updateGameStatus(
+    gameId: string, 
+    status: 'PUBLISHED' | 'DRAFT', 
+    discordUserId: string
+  ): Promise<Game> {
+    try {
+      logInfo('Updating game status', { gameId, status, discordUserId });
+      
+      await apiClient.authenticateWithDiscord(discordUserId);
+      
+      const response = await apiClient.put<Game>(`/games/${gameId}/status`, { status });
+      return response.data!;
+    } catch (error) {
+      logError('Failed to update game status', error as Error, { gameId, status, discordUserId });
       throw error;
     }
   }

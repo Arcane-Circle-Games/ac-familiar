@@ -48,7 +48,7 @@ Discord bot integration with the Arcane Circle TTRPG marketplace platform, enabl
   - `/sessions/{id}/attendance` - Attendance tracking
 
 - ✅ **User Service** (`src/services/api/users.ts`):
-  - `/users/discord/{discordId}` - User lookup by Discord ID
+  - `/users/link-discord?discordId={discordId}` - User lookup by Discord ID
   - `/gms/{gmId}` - GM profile management
 
 - ✅ **Booking Service** (`src/services/api/bookings.ts`):
@@ -78,7 +78,7 @@ Discord bot integration with the Arcane Circle TTRPG marketplace platform, enabl
 2. **`/test-api`** - Complete API connectivity testing
    - Health check (`/health`)
    - Games listing (`/games`)
-   - User lookup (`/users/discord/{id}`)
+   - User lookup (`/users/link-discord?discordId={id}`)
    - API info endpoint
 
 ### ✅ Platform Integration Commands:

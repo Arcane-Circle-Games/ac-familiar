@@ -50,8 +50,13 @@ export class UserService {
     try {
       logInfo('Fetching user by Discord ID', { discordId });
       
-      const response = await apiClient.get<User>(`/users/discord/${discordId}`);
-      return response.data!;
+      const response = await apiClient.get<{found: boolean, user: User}>(`/users/discord/${discordId}`);
+
+      if (response.data && response.data.found && response.data.user) {
+        return response.data.user;
+      }
+
+      throw new Error('User not found or not linked');
     } catch (error) {
       logError('Failed to fetch user by Discord ID', error as Error, { discordId });
       throw error;

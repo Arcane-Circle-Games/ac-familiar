@@ -10,27 +10,27 @@ export const linkCommand: Command = {
   
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply({ ephemeral: true });
-    
+
     try {
-      logInfo('User attempting to link Discord account', {
+      logInfo('User requesting account linking information', {
         userId: interaction.user.id,
         username: interaction.user.username,
         guildId: interaction.guildId
       });
-      
+
       // Check if user is already linked
       try {
         const existingUser = await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
-        
+
         if (existingUser) {
           const embed = new EmbedBuilder()
             .setColor(0x00FF00)
             .setTitle('✅ Already Linked')
-            .setDescription(`Your Discord account is already linked to **${existingUser.username}** on Arcane Circle.`)
+            .setDescription(`Your Discord account is already linked to **${existingUser.displayName || existingUser.username}** on Arcane Circle.`)
             .addFields(
               {
                 name: '👤 Platform Username',
-                value: existingUser.username,
+                value: existingUser.displayName || existingUser.username || 'Not provided',
                 inline: true
               },
               {
@@ -41,8 +41,8 @@ export const linkCommand: Command = {
             )
             .addFields(
               {
-                name: '🌐 Profile',
-                value: `[View on Arcane Circle](${config.PLATFORM_WEB_URL}/profile/${existingUser.id})`,
+                name: '⚙️ Account Settings',
+                value: `[Manage Account Settings](${config.PLATFORM_WEB_URL}/dashboard/settings/login)`,
                 inline: false
               }
             )
@@ -51,120 +51,66 @@ export const linkCommand: Command = {
               iconURL: interaction.client.user?.displayAvatarURL()
             })
             .setTimestamp();
-          
+
           await interaction.editReply({ embeds: [embed] });
           return;
         }
       } catch (error) {
-        // User not found, continue with linking process
-        logInfo('User not found in platform, proceeding with linking', {
+        // User not found, show linking instructions
+        logInfo('User not found in platform, showing linking instructions', {
           userId: interaction.user.id
         });
       }
-      
-      // Attempt to link the account
-      try {
-        const linkResult = await arcaneAPI.users.linkDiscordAccount(
-          interaction.user.id,
-          interaction.user.username
-        );
-        
-        const embed = new EmbedBuilder()
-          .setColor(0x00FF00)
-          .setTitle('✅ Account Linked Successfully!')
-          .setDescription('Your Discord account has been linked to Arcane Circle.')
-          .addFields(
-            {
-              name: '🔗 What\'s Next?',
-              value: 'You can now use Discord commands to interact with your Arcane Circle games and bookings.',
-              inline: false
-            },
-            {
-              name: '🎮 Available Commands',
-              value: '• `/games` - Browse available games\n• `/game-info <id>` - Get details about a specific game\n• `/test-api` - Test your connection',
-              inline: false
-            }
-          )
-          .addFields(
-            {
-              name: '🌐 Platform',
-              value: `[Visit Arcane Circle](${config.PLATFORM_WEB_URL})`,
-              inline: false
-            }
-          )
-          .setFooter({
-            text: 'Arcane Circle Discord Bot',
-            iconURL: interaction.client.user?.displayAvatarURL()
-          })
-          .setTimestamp();
-        
-        await interaction.editReply({ embeds: [embed] });
-        
-        logInfo('Discord account linked successfully', {
-          userId: interaction.user.id,
-          username: interaction.user.username,
-          linkResult
-        });
-        
-      } catch (linkError) {
-        logError('Failed to link Discord account', linkError as Error, {
-          userId: interaction.user.id,
-          username: interaction.user.username
-        });
-        
-        const errorMessage = (linkError as any)?.message || 'Unknown error occurred';
-        
-        const embed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('❌ Linking Failed')
-          .setDescription('Unable to link your Discord account to Arcane Circle.')
-          .addFields(
-            {
-              name: '🔍 Possible Reasons',
-              value: '• You need to create an account on Arcane Circle first\n• API connection issue\n• Your account may already be linked to another Discord user',
-              inline: false
-            },
-            {
-              name: '💡 Solutions',
-              value: `• [Create an account on Arcane Circle](${config.PLATFORM_WEB_URL}/signup)\n• Contact support if you continue to have issues\n• Try again in a few minutes`,
-              inline: false
-            }
-          )
-          .addFields(
-            {
-              name: '❗ Error Details',
-              value: `\`${errorMessage}\``,
-              inline: false
-            }
-          )
-          .setFooter({
-            text: 'Arcane Circle Discord Bot',
-            iconURL: interaction.client.user?.displayAvatarURL()
-          })
-          .setTimestamp();
-        
-        await interaction.editReply({ embeds: [embed] });
-      }
-      
+
+      // User not linked - direct them to the settings page
+      const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('🔗 Link Your Discord Account')
+        .setDescription('To link your Discord account to Arcane Circle, visit the account settings page.')
+        .addFields(
+          {
+            name: '📋 Steps to Link',
+            value: '1. Go to the Arcane Circle settings page\n2. Log in to your account (or create one if needed)\n3. Connect your Discord account in the login settings',
+            inline: false
+          },
+          {
+            name: '🌐 Link Your Account',
+            value: `**[Go to Account Settings](${config.PLATFORM_WEB_URL}/dashboard/settings/login)**`,
+            inline: false
+          },
+          {
+            name: '🎮 After Linking',
+            value: 'Once linked, you can use Discord commands like:\n• `/games` - Browse available games\n• `/game-info <id>` - Get game details\n• `/test-api` - Test your connection',
+            inline: false
+          }
+        )
+        .setFooter({
+          text: 'Arcane Circle Discord Bot',
+          iconURL: interaction.client.user?.displayAvatarURL()
+        })
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+
     } catch (error) {
       logError('Link command failed', error as Error, {
         userId: interaction.user.id,
         guildId: interaction.guildId
       });
-      
+
       const errorEmbed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('❌ Command Error')
-        .setDescription('An unexpected error occurred while processing your request.')
+        .setDescription('An error occurred while checking your account status.')
         .addFields(
           {
-            name: '🔧 Try Again',
-            value: 'Please try the `/link` command again in a few moments.',
+            name: '🔗 Direct Link',
+            value: `You can still visit the settings page directly:\n**[Account Settings](${config.PLATFORM_WEB_URL}/dashboard/settings/login)**`,
             inline: false
           }
         )
         .setTimestamp();
-      
+
       await interaction.editReply({ embeds: [errorEmbed] });
     }
   }

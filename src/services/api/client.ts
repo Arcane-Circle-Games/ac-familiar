@@ -3,11 +3,27 @@ import { config } from '../../utils/config';
 import { logAPICall, logError, logDebug } from '../../utils/logger';
 import { ApiResponse, ApiError } from '../../types/api';
 
+interface CacheEntry {
+  data: any;
+  expiry: number;
+}
+
+interface NegativeCacheEntry {
+  error: string;
+  expiry: number;
+}
+
 export class ArcaneCircleAPIClient {
   private client: AxiosInstance;
   private baseURL: string;
   private apiKey?: string;
   private authToken?: string;
+
+  // User cache for authentication
+  private userCache = new Map<string, CacheEntry>();
+  private negativeCache = new Map<string, NegativeCacheEntry>();
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly NEGATIVE_CACHE_TTL = 30 * 1000; // 30 seconds
   
   constructor() {
     this.baseURL = config.PLATFORM_API_URL;
@@ -23,6 +39,7 @@ export class ArcaneCircleAPIClient {
     });
     
     this.setupInterceptors();
+    this.startCacheCleanup();
   }
   
   private setupInterceptors() {
@@ -49,7 +66,7 @@ export class ArcaneCircleAPIClient {
           fullUrl: `${requestConfig.baseURL}${requestConfig.url}${requestConfig.params ? '?' + new URLSearchParams(requestConfig.params).toString() : ''}`,
           headers: this.sanitizeHeaders(requestConfig.headers),
           params: requestConfig.params,
-          data: requestConfig.data
+          dataSize: requestConfig.data ? JSON.stringify(requestConfig.data).length : 0
         });
         
         return requestConfig;
@@ -89,7 +106,7 @@ export class ArcaneCircleAPIClient {
           logError('API Response Error', new Error(error.message), {
             status: error.response.status,
             statusText: error.response.statusText,
-            data: error.response.data,
+            dataSize: error.response.data ? JSON.stringify(error.response.data).length : 0,
             url: error.config?.url,
             method: error.config?.method
           });
@@ -152,42 +169,85 @@ export class ArcaneCircleAPIClient {
   }
   
   public clearAuthToken(): void {
-    this.authToken = undefined;
+    delete this.authToken;
     logDebug('Auth token cleared from API client');
   }
   
   public async authenticateWithDiscord(discordId: string): Promise<ApiResponse> {
+    const now = Date.now();
+
+    // Check negative cache first (failed lookups)
+    const negativeCached = this.negativeCache.get(discordId);
+    if (negativeCached && now < negativeCached.expiry) {
+      logDebug('User authentication failed (cached)', { discordId });
+      throw new Error(negativeCached.error);
+    }
+
+    // Check positive cache
+    const cached = this.userCache.get(discordId);
+    if (cached && now < cached.expiry) {
+      logDebug('User authenticated via cache', { discordId });
+      return {
+        success: true,
+        data: cached.data
+      };
+    }
+
     try {
-      // For now, we'll use the user lookup as authentication
-      // This matches how the platform works - Discord ID lookup serves as auth
+      // Cache miss - make API call
+      logDebug('Cache miss - fetching user from API', { discordId });
       const response = await this.client.get(`/users/discord/${discordId}`);
-      
-      if (response.data && response.data.id) {
-        // User exists, consider them authenticated
-        logDebug('User authenticated via Discord ID lookup', { discordId });
+
+      if (response.data && response.data.found && response.data.user && response.data.user.id) {
+        // Cache successful result
+        this.userCache.set(discordId, {
+          data: response.data.user,
+          expiry: now + this.CACHE_TTL
+        });
+
+        // Remove from negative cache if it exists
+        this.negativeCache.delete(discordId);
+
+        logDebug('User authenticated via Discord ID lookup (cached)', { discordId });
         return {
           success: true,
-          data: response.data
+          data: response.data.user
         };
       }
-      
+
+      // Cache negative result
+      const errorMsg = 'User not found or not linked';
+      this.negativeCache.set(discordId, {
+        error: errorMsg,
+        expiry: now + this.NEGATIVE_CACHE_TTL
+      });
+
       return {
         success: false,
-        error: 'User not found or not linked'
+        error: errorMsg
       };
     } catch (error) {
       const apiError = this.createApiError(error);
-      
+      let errorMsg: string;
+
       // Handle common authentication errors
       if (apiError.statusCode === 404) {
-        throw new Error('Discord account not linked to Arcane Circle. Use /link to link your account.');
+        errorMsg = 'Discord account not linked to Arcane Circle. Use /link to link your account.';
       } else if (apiError.statusCode === 401) {
-        throw new Error('Authentication failed. Please try linking your account again with /link.');
+        errorMsg = 'Authentication failed. Please try linking your account again with /link.';
       } else if (apiError.statusCode === 0) {
-        throw new Error('Cannot connect to Arcane Circle API. Please try again later.');
+        errorMsg = 'Cannot connect to Arcane Circle API. Please try again later.';
+      } else {
+        errorMsg = apiError.message;
       }
-      
-      throw apiError;
+
+      // Cache the error for a short time to avoid hammering the API
+      this.negativeCache.set(discordId, {
+        error: errorMsg,
+        expiry: now + this.NEGATIVE_CACHE_TTL
+      });
+
+      throw new Error(errorMsg);
     }
   }
   
@@ -273,6 +333,56 @@ export class ArcaneCircleAPIClient {
   // Get API info
   public async getApiInfo(): Promise<ApiResponse> {
     return this.get('/');
+  }
+
+  // Cache management methods
+  private startCacheCleanup(): void {
+    // Clean up expired entries every 2 minutes
+    setInterval(() => {
+      this.cleanupExpiredCache();
+    }, 2 * 60 * 1000);
+  }
+
+  private cleanupExpiredCache(): void {
+    const now = Date.now();
+    let userCacheCleared = 0;
+    let negativeCacheCleared = 0;
+
+    // Clean user cache
+    this.userCache.forEach((entry, discordId) => {
+      if (now >= entry.expiry) {
+        this.userCache.delete(discordId);
+        userCacheCleared++;
+      }
+    });
+
+    // Clean negative cache
+    this.negativeCache.forEach((entry, discordId) => {
+      if (now >= entry.expiry) {
+        this.negativeCache.delete(discordId);
+        negativeCacheCleared++;
+      }
+    });
+
+    if (userCacheCleared > 0 || negativeCacheCleared > 0) {
+      logDebug('Cache cleanup completed', {
+        userCacheCleared,
+        negativeCacheCleared,
+        userCacheSize: this.userCache.size,
+        negativeCacheSize: this.negativeCache.size
+      });
+    }
+  }
+
+  // Clear all cached data (useful for testing or manual cache reset)
+  public clearCache(): void {
+    const userCacheSize = this.userCache.size;
+    const negativeCacheSize = this.negativeCache.size;
+
+    this.userCache.clear();
+    this.negativeCache.clear();
+
+    logDebug('All caches cleared', { userCacheSize, negativeCacheSize });
   }
 }
 

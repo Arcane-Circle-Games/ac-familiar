@@ -290,7 +290,7 @@ export class ArcaneCircleAPI {
   }
 
   async getUserByDiscordId(discordId: string): Promise<any> {
-    const response = await this.client.get(`/api/users/discord/${discordId}`);
+    const response = await this.client.get(`/api/users/link-discord?discordId=${discordId}`);
     return response.data;
   }
 

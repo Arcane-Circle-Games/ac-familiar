@@ -7,6 +7,7 @@ import { testApiCommand } from '../commands/test-api';
 import { linkCommand } from '../commands/link';
 import { gamesCommand } from '../commands/games';
 import { gameInfoCommand, gameInfoCommandData } from '../commands/game-info';
+import { gmCommand } from '../commands/gm';
 
 export class ArcaneBot {
   private client: ArcaneClient;
@@ -22,41 +23,53 @@ export class ArcaneBot {
   
   private setupInteractionHandlers() {
     this.client.on('interactionCreate', async (interaction) => {
-      if (!interaction.isChatInputCommand()) return;
-      
-      const command = this.client.getCommand(interaction.commandName);
-      
-      if (!command) {
-        logError(`Unknown command: ${interaction.commandName}`);
-        return;
-      }
-      
-      try {
-        logDiscordEvent('commandExecuted', {
-          commandName: interaction.commandName,
-          userId: interaction.user.id,
-          username: interaction.user.username,
-          guildId: interaction.guildId
-        });
+      if (interaction.isChatInputCommand()) {
+        const command = this.client.getCommand(interaction.commandName);
         
-        await command.execute(interaction as ChatInputCommandInteraction);
-        
-      } catch (error) {
-        logError(`Error executing command: ${interaction.commandName}`, error as Error, {
-          userId: interaction.user.id,
-          guildId: interaction.guildId
-        });
-        
-        const errorMessage = 'There was an error while executing this command!';
+        if (!command) {
+          logError(`Unknown command: ${interaction.commandName}`);
+          return;
+        }
         
         try {
-          if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: errorMessage, ephemeral: true });
-          } else {
-            await interaction.reply({ content: errorMessage, ephemeral: true });
+          logDiscordEvent('commandExecuted', {
+            commandName: interaction.commandName,
+            userId: interaction.user.id,
+            username: interaction.user.username,
+            guildId: interaction.guildId
+          });
+          
+          await command.execute(interaction as ChatInputCommandInteraction);
+          
+        } catch (error) {
+          logError(`Error executing command: ${interaction.commandName}`, error as Error, {
+            userId: interaction.user.id,
+            guildId: interaction.guildId
+          });
+          
+          const errorMessage = 'There was an error while executing this command!';
+          
+          try {
+            if (interaction.replied || interaction.deferred) {
+              await interaction.followUp({ content: errorMessage, ephemeral: true });
+            } else {
+              await interaction.reply({ content: errorMessage, ephemeral: true });
+            }
+          } catch (replyError) {
+            logError('Failed to send error message to user', replyError as Error);
           }
-        } catch (replyError) {
-          logError('Failed to send error message to user', replyError as Error);
+        }
+      } else if (interaction.isAutocomplete()) {
+        const command = this.client.getCommand(interaction.commandName);
+        
+        if (!command || !command.autocomplete) {
+          return;
+        }
+        
+        try {
+          await command.autocomplete(interaction);
+        } catch (error) {
+          logError(`Error handling autocomplete for ${interaction.commandName}`, error as Error);
         }
       }
     });
@@ -68,7 +81,8 @@ export class ArcaneBot {
       testApiCommand,
       linkCommand,
       gamesCommand,
-      gameInfoCommand
+      gameInfoCommand,
+      gmCommand
     ];
     
     commands.forEach(command => {
@@ -90,7 +104,8 @@ export class ArcaneBot {
         
         return {
           name: command.name,
-          description: command.description
+          description: command.description,
+          options: command.options || []
         };
       });
       

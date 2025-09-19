@@ -10,8 +10,8 @@ const configSchema = z.object({
   DISCORD_GUILD_ID: z.string().optional(),
   
   // Platform API Configuration
-  PLATFORM_API_URL: z.string().url('Invalid Platform API URL').default('https://arcane-circle-git-testing-arcane-circle.vercel.app/api'),
-  PLATFORM_WEB_URL: z.string().url('Invalid Platform Web URL').default('https://arcane-circle-git-testing-arcane-circle.vercel.app'),
+  PLATFORM_API_URL: z.string().url('Invalid Platform API URL').default('https://arcanecircle.games/api'),
+  PLATFORM_WEB_URL: z.string().url('Invalid Platform Web URL').default('https://arcanecircle.games'),
   VERCEL_BYPASS_TOKEN: z.string().optional(),
   
   // Database Configuration

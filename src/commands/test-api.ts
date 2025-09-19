@@ -23,7 +23,7 @@ export const testApiCommand: Command = {
       
       // Test basic health check
       const healthCheck = await arcaneAPI.healthCheck();
-      
+
       if (healthCheck) {
         embed.addFields({
           name: '✅ Health Check',
@@ -37,23 +37,7 @@ export const testApiCommand: Command = {
           inline: true
         });
       }
-      
-      // Test API info
-      try {
-        const apiInfo = await arcaneAPI.getApiInfo();
-        embed.addFields({
-          name: '📊 API Info',
-          value: `Status: ${apiInfo.success ? 'Connected' : 'Error'}`,
-          inline: true
-        });
-      } catch (error) {
-        embed.addFields({
-          name: '📊 API Info',
-          value: 'Failed to fetch info',
-          inline: true
-        });
-      }
-      
+
       // Test authentication
       try {
         const authResult = await arcaneAPI.authenticateWithDiscord(interaction.user.id);
@@ -69,7 +53,7 @@ export const testApiCommand: Command = {
           inline: true
         });
       }
-      
+
       // Test fetching games (campaigns)
       try {
         const games = await arcaneAPI.games.listGames({ limit: 5 });
@@ -81,38 +65,6 @@ export const testApiCommand: Command = {
       } catch (error) {
         embed.addFields({
           name: '🎲 Games Test',
-          value: `Error: ${(error as Error).message}`,
-          inline: true
-        });
-      }
-      
-      // Test basic API info
-      try {
-        const apiInfo = await arcaneAPI.getApiInfo();
-        embed.addFields({
-          name: '📊 API Info Test',
-          value: apiInfo.success ? 'API responding' : 'API error',
-          inline: true
-        });
-      } catch (error) {
-        embed.addFields({
-          name: '📊 API Info Test',
-          value: `Error: ${(error as Error).message}`,
-          inline: true
-        });
-      }
-      
-      // Test user lookup
-      try {
-        const user = await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
-        embed.addFields({
-          name: '👤 User Lookup Test',
-          value: user ? `Found user: ${user.username}` : 'User not found',
-          inline: true
-        });
-      } catch (error) {
-        embed.addFields({
-          name: '👤 User Lookup Test',
           value: `Error: ${(error as Error).message}`,
           inline: true
         });

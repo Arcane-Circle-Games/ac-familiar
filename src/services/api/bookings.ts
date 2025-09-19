@@ -52,15 +52,17 @@ export class BookingService {
   public async updateBookingStatus(
     bookingId: string,
     status: Booking['status'],
-    discordUserId: string
+    discordUserId: string,
+    additionalData?: { message?: string; reason?: string }
   ): Promise<Booking> {
     try {
-      logInfo('Updating booking status', { bookingId, status, discordUserId });
+      logInfo('Updating booking status', { bookingId, status, discordUserId, additionalData });
       
       await apiClient.authenticateWithDiscord(discordUserId);
       
       const response = await apiClient.put<Booking>(`/bookings/${bookingId}/status`, {
-        status
+        status,
+        ...additionalData
       });
       return response.data!;
     } catch (error) {
@@ -70,16 +72,14 @@ export class BookingService {
   }
   
   // Get bookings for a game (GM only)
-  public async getGameBookings(gameId: string, discordUserId: string): Promise<Booking[]> {
+  public async getGameBookings(gameId: string, filters?: { status?: string }): Promise<Booking[]> {
     try {
-      logInfo('Fetching game bookings', { gameId, discordUserId });
+      logInfo('Fetching game bookings', { gameId, filters });
       
-      await apiClient.authenticateWithDiscord(discordUserId);
-      
-      const response = await apiClient.get<{ data: Booking[]; pagination?: any }>(`/games/${gameId}/bookings`);
+      const response = await apiClient.get<{ data: Booking[]; pagination?: any }>(`/games/${gameId}/bookings`, filters);
       return response.data!.data;
     } catch (error) {
-      logError('Failed to fetch game bookings', error as Error, { gameId, discordUserId });
+      logError('Failed to fetch game bookings', error as Error, { gameId, filters });
       throw error;
     }
   }

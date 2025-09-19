@@ -3,12 +3,14 @@ export { GameService, gameService } from './games';
 export { UserService, userService } from './users';
 export { SystemService, systemService } from './systems';
 export { BookingService, bookingService } from './bookings';
+export { GMService, gmService } from './gms';
 
 import { apiClient } from './client';
 import { gameService } from './games';
 import { userService } from './users';
 import { systemService } from './systems';
 import { bookingService } from './bookings';
+import { gmService } from './gms';
 import { logInfo, logError } from '../../utils/logger';
 import { config } from '../../utils/config';
 
@@ -17,12 +19,14 @@ export class ArcaneCircleAPI {
   public users = userService;
   public systems = systemService;
   public bookings = bookingService;
+  public gms = gmService;
   
   constructor() {
     this.games = gameService;
     this.users = userService;
     this.systems = systemService;
     this.bookings = bookingService;
+    this.gms = gmService;
   }
   
   // Get web URL for creating links to the platform

@@ -1,0 +1,4363 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Arcane Circle API",
+        "version": "1.0.0",
+        "description": "API for Arcane Circle, a TTRPG game booking and campaign management platform",
+        "contact": {
+            "name": "Arcane Circle Support",
+            "email": "support@arcanecircle.games"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://localhost:3000",
+            "description": "Local Development"
+        },
+        {
+            "url": "https://arcanecircle.games",
+            "description": "Production API"
+        },
+        {
+            "url": "https://staging.arcanecircle.games",
+            "description": "Staging API"
+        }
+    ],
+    "security": [
+        {
+            "nextAuthSession": []
+        }
+    ],
+    "tags": [
+        {"name": "Authentication", "description": "User authentication and authorization"},
+        {"name": "Games", "description": "Game creation, management, and discovery"},
+        {"name": "Bookings", "description": "Player bookings and session management"},
+        {"name": "Profiles", "description": "User profile management"},
+        {"name": "Notifications", "description": "User notification systems"},
+        {"name": "Payments", "description": "Payment processing and transactions"},
+        {"name": "Wiki", "description": "Campaign wiki and documentation"},
+        {"name": "Templates", "description": "Campaign and game templates"},
+        {"name": "Messaging", "description": "In-app messaging system"},
+        {"name": "Invite System", "description": "Invite code and access management"},
+        {"name": "Observer System", "description": "Game observation and learning features"},
+        {"name": "Analytics", "description": "Platform and user analytics"},
+        {"name": "Reviews", "description": "GM and player reviews"},
+        {"name": "Cron Jobs", "description": "Scheduled background tasks and automation"},
+        {"name": "Development", "description": "Development and debugging endpoints"},
+        {"name": "API Documentation", "description": "API specification and documentation endpoints"}
+    ],
+    "x-tagGroups": [
+        {
+            "name": "Core Functionality",
+            "tags": ["Authentication", "Games", "Bookings", "Profiles"]
+        },
+        {
+            "name": "Game Content & Tools",
+            "tags": ["Wiki", "Templates", "Observer System"]
+        },
+        {
+            "name": "Communication",
+            "tags": ["Messaging", "Notifications"]
+        },
+        {
+            "name": "Financial",
+            "tags": ["Payments"]
+        },
+        {
+            "name": "Community & Feedback",
+            "tags": ["Reviews", "Invite System"]
+        },
+        {
+            "name": "Administration",
+            "tags": ["Analytics"]
+        },
+        {
+            "name": "System & Development",
+            "tags": ["Cron Jobs", "Development", "API Documentation"]
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "nextAuthSession": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "NextAuth session token authentication"
+            }
+        },
+        "schemas": {
+            "User": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "email": {"type": "string"},
+                    "emailVerified": {"type": "string", "format": "date-time"},
+                    "image": {"type": "string"},
+                    "displayName": {"type": "string"},
+                    "timezone": {"type": "string"},
+                    "birthMonth": {"type": "integer"},
+                    "birthYear": {"type": "integer"},
+                    "pronouns": {"type": "string"},
+                    "isAdmin": {"type": "boolean"},
+                    "accessTier": {"$ref": "#/components/schemas/AccessTier"},
+                    "primaryProvider": {"type": "string"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "updatedAt": {"type": "string", "format": "date-time"}
+                }
+            },
+            "UserProfile": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "userId": {"type": "string"},
+                    "profileImage": {"type": "string"},
+                    "ttrpgExperience": {"$ref": "#/components/schemas/TTRPGExperience"},
+                    "isGM": {"type": "boolean"},
+                    "gmBio": {"type": "string"},
+                    "gmExperienceYears": {"type": "integer"},
+                    "gmStyle": {"$ref": "#/components/schemas/GMStyle"},
+                    "preferredSystems": {"type": "array", "items": {"type": "string"}},
+                    "socialLinks": {
+                        "type": "object",
+                        "properties": {
+                            "twitchUrl": {"type": "string"},
+                            "twitterUrl": {"type": "string"},
+                            "youtubeUrl": {"type": "string"},
+                            "instagramUrl": {"type": "string"},
+                            "tiktokUrl": {"type": "string"}
+                        }
+                    },
+                    "stripeAccountId": {"type": "string"},
+                    "stripeOnboarded": {"type": "boolean"},
+                    "averageRating": {"type": "number"},
+                    "totalRatings": {"type": "integer"},
+                    "verified": {"type": "boolean"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "updatedAt": {"type": "string", "format": "date-time"}
+                }
+            },
+            "Game": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "gmId": {"type": "string"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "shortDescription": {"type": "string"},
+                    "gameImage": {"type": "string", "nullable": true},
+                    "system": {"$ref": "#/components/schemas/GameSystem"},
+                    "gameType": {"$ref": "#/components/schemas/GameType"},
+                    "startTime": {"type": "string", "format": "date-time"},
+                    "endTime": {"type": "string", "format": "date-time"},
+                    "timezone": {"type": "string"},
+                    "duration": {"type": "integer", "nullable": true},
+                    "frequency": {"type": "string", "nullable": true},
+                    "defaultSessionTime": {"type": "string", "nullable": true},
+                    "defaultSessionDuration": {"type": "integer", "nullable": true},
+                    "maxPlayers": {"type": "integer"},
+                    "minExperience": {"$ref": "#/components/schemas/ExperienceLevel"},
+                    "ageRequirement": {"type": "string", "nullable": true},
+                    "contentWarnings": {"type": "array", "items": {"type": "string"}},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "pricePerSession": {"type": "string"},
+                    "currency": {"type": "string"},
+                    "requiresApproval": {"type": "boolean"},
+                    "isRecurring": {"type": "boolean"},
+                    "totalSessions": {"type": "integer", "nullable": true},
+                    "currentSession": {"type": "integer"},
+                    "lockGameHours": {"type": "integer"},
+                    "allowObservers": {"type": "boolean"},
+                    "observerPrice": {"type": "string", "nullable": true},
+                    "maxObservers": {"type": "integer", "nullable": true},
+                    "observerRequiresApproval": {"type": "boolean"},
+                    "observerPermissions": {"$ref": "#/components/schemas/ObserverPermissions"},
+                    "discordServerUrl": {"type": "string", "nullable": true},
+                    "vttLink": {"type": "string", "nullable": true},
+                    "status": {"$ref": "#/components/schemas/GameStatus"},
+                    "featured": {"type": "boolean"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "updatedAt": {"type": "string", "format": "date-time"},
+                    "publishedAt": {"type": "string", "format": "date-time", "nullable": true},
+                    "gm": {
+                        "type": "object",
+                        "properties": {
+                            "profile": {"$ref": "#/components/schemas/GMProfile"}
+                        }
+                    },
+                    "interests": {"type": "array", "items": {"type": "object"}},
+                    "currentPlayers": {"type": "integer"},
+                    "currentObservers": {"type": "integer"},
+                    "observerSlotsAvailable": {"type": "integer"},
+                    "observerSlotsTotal": {"type": "integer"}
+                }
+            },
+            "Booking": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "gameId": {"type": "string"},
+                    "playerId": {"type": "string"},
+                    "applicationMessage": {"type": "string"},
+                    "characterConcept": {"type": "string"},
+                    "bookingType": {"$ref": "#/components/schemas/BookingType"},
+                    "status": {"$ref": "#/components/schemas/BookingStatus"},
+                    "amount": {"type": "number"},
+                    "currency": {"type": "string"},
+                    "paymentStatus": {"$ref": "#/components/schemas/PaymentStatus"},
+                    "preAuthorizationTotal": {"type": "number"},
+                    "sessionsAuthorized": {"type": "integer"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "updatedAt": {"type": "string", "format": "date-time"}
+                }
+            },
+            "GameSession": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "gameId": {"type": "string"},
+                    "sessionNumber": {"type": "integer"},
+                    "scheduledTime": {"type": "string", "format": "date-time"},
+                    "endTime": {"type": "string", "format": "date-time"},
+                    "actualStartTime": {"type": "string", "format": "date-time"},
+                    "actualEndTime": {"type": "string", "format": "date-time"},
+                    "status": {"$ref": "#/components/schemas/SessionStatus"},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "discordLink": {"type": "string"},
+                    "vttLink": {"type": "string"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "updatedAt": {"type": "string", "format": "date-time"}
+                }
+            },
+            "Notification": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "message": {"type": "string"},
+                    "url": {"type": "string"},
+                    "priority": {"$ref": "#/components/schemas/NotificationPriority"},
+                    "channels": {"type": "array", "items": {"type": "string"}},
+                    "status": {"$ref": "#/components/schemas/NotificationStatus"},
+                    "createdAt": {"type": "string", "format": "date-time"}
+                }
+            },
+            "InviteCode": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "code": {"type": "string"},
+                    "tier": {"$ref": "#/components/schemas/AccessTier"},
+                    "grantsTier": {"$ref": "#/components/schemas/AccessTier"},
+                    "codeType": {"$ref": "#/components/schemas/InviteCodeType"},
+                    "maxUses": {"type": "integer"},
+                    "currentUses": {"type": "integer"},
+                    "isActive": {"type": "boolean"},
+                    "expiresAt": {"type": "string", "format": "date-time"},
+                    "createdAt": {"type": "string", "format": "date-time"}
+                }
+            },
+            "AccessTier": {
+                "type": "string",
+                "enum": [
+                    "ADMIN",
+                    "ALPHA",
+                    "BETA",
+                    "ALPHA_GUEST",
+                    "BETA_GUEST"
+                ]
+            },
+            "GameType": {
+                "type": "string",
+                "enum": [
+                    "ONE_SHOT",
+                    "CAMPAIGN",
+                    "MINI_SERIES"
+                ]
+            },
+            "GameStatus": {
+                "type": "string",
+                "enum": [
+                    "DRAFT",
+                    "PUBLISHED",
+                    "ACTIVE",
+                    "COMPLETED",
+                    "CANCELLED"
+                ]
+            },
+            "BookingStatus": {
+                "type": "string",
+                "enum": [
+                    "PENDING",
+                    "APPROVED",
+                    "CONFIRMED",
+                    "CANCELLED",
+                    "COMPLETED",
+                    "NO_SHOW",
+                    "REFUNDED"
+                ]
+            },
+            "PaymentStatus": {
+                "type": "string",
+                "enum": [
+                    "PENDING",
+                    "PROCESSING",
+                    "SUCCEEDED",
+                    "FAILED",
+                    "CANCELLED",
+                    "REFUNDED"
+                ]
+            },
+            "SessionStatus": {
+                "type": "string",
+                "enum": [
+                    "SCHEDULED",
+                    "ACTIVE",
+                    "COMPLETED",
+                    "CANCELLED",
+                    "POSTPONED"
+                ]
+            },
+            "BookingType": {
+                "type": "string",
+                "enum": [
+                    "PLAYER",
+                    "OBSERVER"
+                ]
+            },
+            "TTRPGExperience": {
+                "type": "string",
+                "enum": [
+                    "NEVER_PLAYED",
+                    "BEGINNER",
+                    "SOME_EXPERIENCE",
+                    "EXPERIENCED",
+                    "VETERAN"
+                ]
+            },
+            "GMStyle": {
+                "type": "string",
+                "enum": [
+                    "ROLEPLAY_HEAVY",
+                    "COMBAT_TACTICAL",
+                    "EXPLORATION",
+                    "SOCIAL_POLITICAL",
+                    "HORROR_DARK",
+                    "COMEDY_LIGHTHEARTED",
+                    "SANDBOX_OPEN",
+                    "RULES_STRICT",
+                    "RULES_FLEXIBLE"
+                ]
+            },
+            "ExperienceLevel": {
+                "type": "string",
+                "enum": [
+                    "NEVER_PLAYED",
+                    "BEGINNER",
+                    "SOME_EXPERIENCE",
+                    "EXPERIENCED",
+                    "EXPERT"
+                ]
+            },
+            "CampaignFrequency": {
+                "type": "string",
+                "enum": [
+                    "WEEKLY",
+                    "BI_WEEKLY",
+                    "MONTHLY",
+                    "CUSTOM"
+                ]
+            },
+            "NotificationPriority": {
+                "type": "string",
+                "enum": [
+                    "LOW",
+                    "MEDIUM",
+                    "HIGH",
+                    "CRITICAL"
+                ]
+            },
+            "NotificationStatus": {
+                "type": "string",
+                "enum": [
+                    "PENDING",
+                    "SENT",
+                    "FAILED",
+                    "CANCELLED"
+                ]
+            },
+            "InviteCodeType": {
+                "type": "string",
+                "enum": [
+                    "ADMIN_SINGLE",
+                    "ADMIN_BULK",
+                    "USER_GENERATED",
+                    "SYSTEM_MIGRATION"
+                ]
+            },
+            "GameSystem": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "shortName": {"type": "string"},
+                    "description": {"type": "string"},
+                    "publisher": {"type": "string"},
+                    "category": {"type": "string"},
+                    "popular": {"type": "boolean"}
+                }
+            },
+            "GMProfile": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "displayName": {"type": "string"},
+                    "bio": {"type": "string"},
+                    "experienceLevel": {"$ref": "#/components/schemas/ExperienceLevel"},
+                    "gmStyles": {"type": "array", "items": {"$ref": "#/components/schemas/GMStyle"}},
+                    "totalRatings": {"type": "integer"},
+                    "averageRating": {"type": "number"},
+                    "verified": {"type": "boolean"}
+                }
+            },
+            "ObserverPermissions": {
+                "type": "object",
+                "properties": {
+                    "canSeeChat": {"type": "boolean"},
+                    "canSeeRolls": {"type": "boolean"},
+                    "canSeeCharacterSheets": {"type": "boolean"}
+                }
+            },
+            "Review": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "bookingId": {"type": "string"},
+                    "reviewerId": {"type": "string"},
+                    "revieweeId": {"type": "string"},
+                    "gameId": {"type": "string"},
+                    "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "comment": {"type": "string", "nullable": true},
+                    "reviewType": {"type": "string", "enum": ["PLAYER_TO_GM", "GM_TO_PLAYER"]},
+                    "isVisible": {"type": "boolean", "default": true},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "updatedAt": {"type": "string", "format": "date-time"}
+                },
+                "required": ["id", "bookingId", "reviewerId", "revieweeId", "gameId", "rating", "reviewType"]
+            },
+            "ReviewWithRelations": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Review"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "reviewer": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "displayName": {"type": "string"},
+                                    "image": {"type": "string", "nullable": true}
+                                }
+                            },
+                            "reviewee": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "displayName": {"type": "string"},
+                                    "image": {"type": "string", "nullable": true}
+                                }
+                            },
+                            "game": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "title": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "CreateReviewRequest": {
+                "type": "object",
+                "properties": {
+                    "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "comment": {"type": "string", "nullable": true},
+                    "isVisible": {"type": "boolean", "default": true}
+                },
+                "required": ["rating"]
+            },
+            "UpdateReviewRequest": {
+                "type": "object",
+                "properties": {
+                    "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "comment": {"type": "string", "nullable": true},
+                    "isVisible": {"type": "boolean"}
+                }
+            },
+            "PendingReview": {
+                "type": "object",
+                "properties": {
+                    "bookingId": {"type": "string"},
+                    "gameTitle": {"type": "string"},
+                    "gameMasterId": {"type": "string"},
+                    "gameMasterName": {"type": "string"},
+                    "playerId": {"type": "string"},
+                    "playerName": {"type": "string"},
+                    "sessionDate": {"type": "string", "format": "date-time"},
+                    "reviewType": {"type": "string", "enum": ["PLAYER_TO_GM", "GM_TO_PLAYER"]},
+                    "canReview": {"type": "boolean"}
+                },
+                "required": ["bookingId", "gameTitle", "gameMasterId", "gameMasterName", "playerId", "playerName", "reviewType", "canReview"]
+            },
+            "ReviewStats": {
+                "type": "object",
+                "properties": {
+                    "averageRating": {"type": "number", "nullable": true},
+                    "totalReviews": {"type": "integer"},
+                    "ratingDistribution": {
+                        "type": "object",
+                        "properties": {
+                            "1": {"type": "integer"},
+                            "2": {"type": "integer"},
+                            "3": {"type": "integer"},
+                            "4": {"type": "integer"},
+                            "5": {"type": "integer"}
+                        }
+                    },
+                    "recentReviews": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/ReviewWithRelations"}
+                    }
+                },
+                "required": ["totalReviews", "ratingDistribution"]
+            }
+        }
+    },
+    "paths": {
+        "/api/auth/{provider}": {
+            "get": {
+                "tags": ["Authentication"],
+                "summary": "NextAuth.js authentication handler (GET)",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "provider",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Authentication response"},
+                    "302": {"description": "Redirect to provider"}
+                }
+            },
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "NextAuth.js authentication handler (POST)",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "provider",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Authentication response"},
+                    "302": {"description": "Redirect after authentication"}
+                }
+            }
+        },
+        "/api/auth/[...nextauth]": {
+            "get": {
+                "tags": ["Authentication"],
+                "summary": "NextAuth.js dynamic authentication handler (GET)",
+                "description": "Handles all NextAuth.js authentication routes including signin, signout, callback, etc.",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "nextauth",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "description": "Dynamic route segments for NextAuth operations"
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Authentication response"},
+                    "302": {"description": "Redirect response"},
+                    "400": {"description": "Bad request"},
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "NextAuth.js dynamic authentication handler (POST)",
+                "description": "Handles POST requests for NextAuth.js authentication operations",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "nextauth",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "description": "Dynamic route segments for NextAuth operations"
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object"}
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {"type": "object"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Authentication response"},
+                    "302": {"description": "Redirect response"},
+                    "400": {"description": "Bad request"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/users/profile": {
+            "get": {
+                "tags": ["Profiles"],
+                "summary": "Get current user profile",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {
+                        "description": "User profile retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/User"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {"$ref": "#/components/schemas/UserProfile"}
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "put": {
+                "tags": ["Profiles"],
+                "summary": "Update user profile",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "displayName": {"type": "string"},
+                                    "bio": {"type": "string"},
+                                    "timezone": {"type": "string"},
+                                    "pronouns": {"type": "string"},
+                                    "experienceLevel": {"$ref": "#/components/schemas/TTRPGExperience"},
+                                    "favoriteGenres": {"type": "array", "items": {"type": "string"}},
+                                    "preferredTimeSlots": {"type": "array", "items": {"type": "string"}},
+                                    "isGM": {"type": "boolean"},
+                                    "gmBio": {"type": "string"},
+                                    "gmExperienceYears": {"type": "integer"},
+                                    "gmStyle": {"$ref": "#/components/schemas/GMStyle"},
+                                    "preferredSystems": {"type": "array", "items": {"type": "string"}},
+                                    "socialLinks": {"type": "object"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Profile updated successfully"},
+                    "400": {"description": "Invalid input"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/users/profile/upload-image": {
+            "post": {
+                "tags": ["Profiles"],
+                "summary": "Upload profile image",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string", "format": "binary"}
+                                },
+                                "required": ["file"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Image uploaded successfully"},
+                    "400": {"description": "Invalid file or size limit exceeded"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/users/profile/remove-image": {
+            "delete": {
+                "tags": ["Profiles"],
+                "summary": "Remove profile image",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Profile image removed successfully"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/users/check-gm-status": {
+            "get": {
+                "tags": ["Profiles"],
+                "summary": "Check if user is a GM",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {
+                        "description": "GM status retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "isGM": {"type": "boolean"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/users/search": {
+            "get": {
+                "tags": ["Profiles"],
+                "summary": "Search users for messaging",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "Search term"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {"type": "integer", "default": 10},
+                        "description": "Maximum number of results"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User search results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/User"}
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/users/link-discord?discordId={discordId}": {
+            "get": {
+                "tags": ["Profiles"],
+                "summary": "Check Discord link status",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "discordId",
+                        "in": "query",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Discord link status"},
+                    "404": {"description": "Discord ID not linked"}
+                }
+            },
+            "post": {
+                "tags": ["Profiles"],
+                "summary": "Link Discord account",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "discordId": {"type": "string"},
+                                    "discordUsername": {"type": "string"}
+                                },
+                                "required": ["discordId", "discordUsername"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Discord account linked successfully"},
+                    "400": {"description": "Invalid Discord information"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/health": {
+            "get": {
+                "tags": ["Authentication"],
+                "summary": "Health check endpoint",
+                "security": [],
+                "responses": {
+                    "200": {"description": "System healthy"}
+                }
+            }
+        },
+        "/api/test/validation": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "Validation testing endpoint",
+                "security": [],
+                "responses": {
+                    "200": {"description": "Validation test completed"}
+                }
+            }
+        },
+        "/api/waitlist": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "Waitlist signup",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "email": {"type": "string", "format": "email"}
+                                },
+                                "required": ["email"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Successfully added to waitlist"},
+                    "400": {"description": "Invalid email or already on waitlist"}
+                }
+            }
+        },
+        "/api/games": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Search and list published games",
+                "security": [],
+                "parameters": [
+                    {"name": "search", "in": "query", "schema": {"type": "string"}},
+                    {"name": "system", "in": "query", "schema": {"type": "string"}},
+                    {"name": "gameType", "in": "query", "schema": {"$ref": "#/components/schemas/GameType"}},
+                    {"name": "experienceLevel", "in": "query", "schema": {"$ref": "#/components/schemas/ExperienceLevel"}},
+                    {"name": "maxPrice", "in": "query", "schema": {"type": "number"}},
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Games retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {"type": "boolean"},
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {"type": "array", "items": {"$ref": "#/components/schemas/Game"}},
+                                                "page": {"type": "integer"},
+                                                "limit": {"type": "integer"},
+                                                "totalCount": {"type": "integer"},
+                                                "totalPages": {"type": "integer"},
+                                                "hasNextPage": {"type": "boolean"},
+                                                "hasPreviousPage": {"type": "boolean"}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Games"],
+                "summary": "Create new game",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "allOf": [
+                                    {"$ref": "#/components/schemas/Game"},
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "createWiki": {"type": "boolean"}
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Game created successfully"},
+                    "400": {"description": "Invalid game data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/games/upload-image": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Upload game banner image",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string", "format": "binary"}
+                                },
+                                "required": ["file"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Image uploaded successfully"},
+                    "400": {"description": "Invalid file or size limit exceeded"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/games/{id}": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get game details",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Game details retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Game"}
+                            }
+                        }
+                    },
+                    "404": {"description": "Game not found"}
+                }
+            },
+            "patch": {
+                "tags": ["Games"],
+                "summary": "Update game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Game"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Game updated successfully"},
+                    "400": {"description": "Invalid game data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Games"],
+                "summary": "Delete game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Game deleted successfully"},
+                    "400": {"description": "Cannot delete game with confirmed bookings"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/publish": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Publish game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Game published successfully"},
+                    "400": {"description": "Missing required fields for publishing"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/membership": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get user's membership status for game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Membership status retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/bookings": {
+            "get": {
+                "tags": ["Bookings"],
+                "summary": "Get all bookings for game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bookings retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/Booking"}
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/applications": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get all applications for game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Applications retrieved successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/interest": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get current user's interest status",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Interest status retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"}
+                }
+            },
+            "post": {
+                "tags": ["Games"],
+                "summary": "Apply to join game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "applicationMessage": {"type": "string"},
+                                    "characterConcept": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Application submitted successfully"},
+                    "400": {"description": "Invalid application data"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"},
+                    "409": {"description": "Already applied to this game"}
+                }
+            }
+        },
+        "/api/games/{id}/interest/{interestId}": {
+            "patch": {
+                "tags": ["Games"],
+                "summary": "Approve/decline application",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "interestId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "status": {"type": "string", "enum": ["CONTACTED", "DECLINED"]}
+                                },
+                                "required": ["status"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Application status updated"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Application not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Games"],
+                "summary": "Remove application",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "interestId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Application removed successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to remove this application"},
+                    "404": {"description": "Application not found"}
+                }
+            }
+        },
+        "/api/games/{id}/interest/{interestId}/allow-reapply": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Allow player to re-apply",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "interestId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Player can now re-apply"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Application not found"}
+                }
+            }
+        },
+        "/api/games/{id}/observer-interest": {
+            "get": {
+                "tags": ["Observer System"],
+                "summary": "Get observer applications for game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Observer applications retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            },
+            "post": {
+                "tags": ["Observer System"],
+                "summary": "Apply as observer",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "learningGoals": {"type": "string"},
+                                    "experienceLevel": {"$ref": "#/components/schemas/TTRPGExperience"},
+                                    "desiredPermissions": {"type": "object"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Observer application submitted"},
+                    "400": {"description": "Invalid application data"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/observer-interest/{interestId}": {
+            "patch": {
+                "tags": ["Observer System"],
+                "summary": "Approve/decline observer application",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "interestId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "status": {"type": "string", "enum": ["CONTACTED", "DECLINED"]}
+                                },
+                                "required": ["status"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Observer application status updated"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Application not found"}
+                }
+            }
+        },
+        "/api/games/{id}/observer-booking": {
+            "post": {
+                "tags": ["Observer System"],
+                "summary": "Create observer booking with payment",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "paymentMethodId": {"type": "string"},
+                                    "learningGoals": {"type": "string"},
+                                    "experienceLevel": {"$ref": "#/components/schemas/TTRPGExperience"},
+                                    "desiredPermissions": {"type": "object"}
+                                },
+                                "required": ["paymentMethodId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Observer booking created successfully"},
+                    "400": {"description": "Invalid booking data"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/complete": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Mark game as complete",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Game marked as complete"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/{sessionId}": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get session details",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session details retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/GameSession"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Session not found"}
+                }
+            },
+            "patch": {
+                "tags": ["Games"],
+                "summary": "Update session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/GameSession"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Session updated successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Session not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Games"],
+                "summary": "Cancel session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Session cancelled successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Session not found"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/start": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Start next session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Session started successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"},
+                    "409": {"description": "Session already active or no sessions available"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/{sessionId}/complete": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Mark session complete",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Session marked as complete"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Session not found"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/{sessionId}/cancel": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Cancel a scheduled session",
+                "description": "Cancel a specific session for a game, with optional notification to players",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "Game ID"
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "Session ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {"type": "string", "description": "Reason for cancellation"},
+                                    "notifyPlayers": {"type": "boolean", "default": true, "description": "Whether to notify players of cancellation"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Session cancelled successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to cancel this session"},
+                    "404": {"description": "Session not found"},
+                    "409": {"description": "Session cannot be cancelled (already started/completed)"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/complete": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Bulk complete sessions",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Sessions completed successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/{sessionId}/schedule": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Schedule session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "scheduledTime": {"type": "string", "format": "date-time"},
+                                    "endTime": {"type": "string", "format": "date-time"}
+                                },
+                                "required": ["scheduledTime"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Session scheduled successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Session not found"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/{sessionId}/confirm-payment": {
+            "post": {
+                "tags": ["Games"],
+                "summary": "Confirm session payment",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Payment confirmed successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Session not found"}
+                }
+            }
+        },
+        "/api/sessions/{id}/attendance": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get attendance for session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Attendance retrieved successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Session not found"}
+                }
+            },
+            "post": {
+                "tags": ["Games"],
+                "summary": "Record attendance",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "attendance": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "playerId": {"type": "string"},
+                                                "attended": {"type": "boolean"}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Attendance recorded successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to record attendance"},
+                    "404": {"description": "Session not found"}
+                }
+            }
+        },
+        "/api/sessions/{id}/attendance/{playerId}": {
+            "patch": {
+                "tags": ["Games"],
+                "summary": "Update player attendance",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "playerId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "attended": {"type": "boolean"}
+                                },
+                                "required": ["attended"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Attendance updated successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to update attendance"},
+                    "404": {"description": "Session or player not found"}
+                }
+            }
+        },
+        "/api/games/{id}/sessions/attendance": {
+            "get": {
+                "tags": ["Games"],
+                "summary": "Get game attendance summary",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Attendance summary retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/sessions/{id}/start-preauth": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Start pre-authorization for session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Pre-authorization started successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized"},
+                    "404": {"description": "Session not found"}
+                }
+            }
+        },
+        "/api/games/{id}/charge-bookings": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Charge all bookings for active session",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Bookings charged successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/bookings/{id}": {
+            "get": {
+                "tags": ["Bookings"],
+                "summary": "Get booking details",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Booking details retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Booking"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner or GM"},
+                    "404": {"description": "Booking not found"}
+                }
+            },
+            "patch": {
+                "tags": ["Bookings"],
+                "summary": "Update booking",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Booking"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Booking updated successfully"},
+                    "400": {"description": "Invalid booking data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner"},
+                    "404": {"description": "Booking not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Bookings"],
+                "summary": "Cancel booking",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Booking cancelled successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner"},
+                    "404": {"description": "Booking not found"}
+                }
+            }
+        },
+        "/api/bookings/create-deferred": {
+            "post": {
+                "tags": ["Bookings"],
+                "summary": "Create campaign booking with pre-authorization",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "gameId": {"type": "string"},
+                                    "sessionId": {"type": "string"},
+                                    "paymentMethodId": {"type": "string"},
+                                    "applicationMessage": {"type": "string"},
+                                    "characterConcept": {"type": "string"}
+                                },
+                                "required": ["gameId", "paymentMethodId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Deferred booking created successfully"},
+                    "400": {"description": "Invalid booking data"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/bookings/{id}/retry-payment": {
+            "post": {
+                "tags": ["Bookings"],
+                "summary": "Retry failed payment",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Payment retry initiated"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner"},
+                    "404": {"description": "Booking not found"}
+                }
+            }
+        },
+        "/api/bookings/{id}/reset": {
+            "post": {
+                "tags": ["Bookings"],
+                "summary": "Reset booking payment status",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Booking payment status reset"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner"},
+                    "404": {"description": "Booking not found"}
+                }
+            }
+        },
+        "/api/bookings/{id}/leave": {
+            "post": {
+                "tags": ["Bookings"],
+                "summary": "Leave campaign",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Successfully left campaign"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner"},
+                    "404": {"description": "Booking not found"}
+                }
+            }
+        },
+        "/api/payment-methods": {
+            "get": {
+                "tags": ["Payments"],
+                "summary": "Get user's payment methods",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Payment methods retrieved successfully"},
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Add payment method",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "paymentMethodId": {"type": "string"}
+                                },
+                                "required": ["paymentMethodId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Payment method added successfully"},
+                    "400": {"description": "Invalid payment method"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/payment-methods/{id}": {
+            "delete": {
+                "tags": ["Payments"],
+                "summary": "Remove payment method",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Payment method removed successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not payment method owner"},
+                    "404": {"description": "Payment method not found"}
+                }
+            }
+        },
+        "/api/bookings/{id}/payment-method": {
+            "patch": {
+                "tags": ["Bookings"],
+                "summary": "Update booking payment method",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "paymentMethodId": {"type": "string"}
+                                },
+                                "required": ["paymentMethodId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Payment method updated successfully"},
+                    "400": {"description": "Invalid payment method"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not booking owner"},
+                    "404": {"description": "Booking not found"}
+                }
+            }
+        },
+        "/api/payments/intent": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Create payment intent",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {"type": "number"},
+                                    "currency": {"type": "string", "default": "usd"},
+                                    "gameId": {"type": "string"}
+                                },
+                                "required": ["amount", "gameId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Payment intent created successfully"},
+                    "400": {"description": "Invalid payment data"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/payments/fees": {
+            "get": {
+                "tags": ["Payments"],
+                "summary": "Get platform fee structure",
+                "security": [],
+                "responses": {
+                    "200": {"description": "Fee structure retrieved successfully"}
+                }
+            }
+        },
+        "/api/payments/webhook": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Stripe webhook handler",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Webhook processed successfully"},
+                    "400": {"description": "Invalid webhook data"}
+                }
+            }
+        },
+        "/api/payments/connect/onboard": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Start Stripe onboarding",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Onboarding started successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/payments/connect/status": {
+            "get": {
+                "tags": ["Payments"],
+                "summary": "Get Stripe onboarding status",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Onboarding status retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/payments/connect/account": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Create Stripe Connect account",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "201": {"description": "Stripe account created successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/payments/connect/dashboard": {
+            "post": {
+                "tags": ["Payments"],
+                "summary": "Get Stripe dashboard link",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Dashboard link retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/templates": {
+            "get": {
+                "tags": ["Templates"],
+                "summary": "Get templates",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}},
+                    {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}},
+                    {"name": "type", "in": "query", "schema": {"type": "string"}},
+                    {"name": "public", "in": "query", "schema": {"type": "boolean"}}
+                ],
+                "responses": {
+                    "200": {"description": "Templates retrieved successfully"},
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Create template",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "templateData": {"type": "object"},
+                                    "variables": {"type": "array", "items": {"type": "object"}},
+                                    "isPublic": {"type": "boolean"}
+                                },
+                                "required": ["name", "templateData"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Template created successfully"},
+                    "400": {"description": "Invalid template data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"}
+                }
+            }
+        },
+        "/api/templates/{templateId}": {
+            "get": {
+                "tags": ["Templates"],
+                "summary": "Get template details",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Template details retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Template not found"}
+                }
+            },
+            "put": {
+                "tags": ["Templates"],
+                "summary": "Update template",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "templateData": {"type": "object"},
+                                    "variables": {"type": "array", "items": {"type": "object"}},
+                                    "isPublic": {"type": "boolean"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Template updated successfully"},
+                    "400": {"description": "Invalid template data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not template owner"},
+                    "404": {"description": "Template not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Templates"],
+                "summary": "Delete template",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Template deleted successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not template owner"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/{templateId}/apply": {
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Apply template to create game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "variables": {"type": "object"}
+                                },
+                                "required": ["variables"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Game created from template"},
+                    "400": {"description": "Invalid variable values"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/{templateId}/duplicate": {
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Duplicate template",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "201": {"description": "Template duplicated successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/{templateId}/save-as-new": {
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Save template as new version",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"}
+                                },
+                                "required": ["name"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "New template version created"},
+                    "400": {"description": "Invalid template data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not template owner"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/{templateId}/share": {
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Generate share code for template",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "201": {"description": "Share code generated successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not template owner"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/preview": {
+            "get": {
+                "tags": ["Templates"],
+                "summary": "Preview template via share code",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "shareCode",
+                        "in": "query",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Template preview retrieved"},
+                    "400": {"description": "Invalid or expired share code"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/import": {
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Import template via share code",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "shareCode": {"type": "string"}
+                                },
+                                "required": ["shareCode"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Template imported successfully"},
+                    "400": {"description": "Invalid or expired share code"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/templates/from-game": {
+            "post": {
+                "tags": ["Templates"],
+                "summary": "Create template from existing game",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "gameId": {"type": "string"},
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "isPublic": {"type": "boolean"}
+                                },
+                                "required": ["gameId", "name"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Template created from game"},
+                    "400": {"description": "Invalid game or template data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not game owner"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/wiki": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "Get wiki by game ID",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "gameId",
+                        "in": "query",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki retrieved successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view this wiki"},
+                    "404": {"description": "Wiki not found"}
+                }
+            },
+            "post": {
+                "tags": ["Wiki"],
+                "summary": "Create wiki for game",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "gameId": {"type": "string"},
+                                    "name": {"type": "string"}
+                                },
+                                "required": ["gameId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Wiki created successfully"},
+                    "400": {"description": "Invalid wiki data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"},
+                    "409": {"description": "Wiki already exists for this game"}
+                }
+            }
+        },
+        "/api/wiki/{wikiId}": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "Get wiki details",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki details retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view this wiki"},
+                    "404": {"description": "Wiki not found"}
+                }
+            },
+            "put": {
+                "tags": ["Wiki"],
+                "summary": "Update wiki",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Wiki updated successfully"},
+                    "400": {"description": "Invalid wiki data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to edit this wiki"},
+                    "404": {"description": "Wiki not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Wiki"],
+                "summary": "Delete wiki",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki deleted successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to delete this wiki"},
+                    "404": {"description": "Wiki not found"}
+                }
+            }
+        },
+        "/api/wiki/{wikiId}/settings": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "Get wiki settings",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki settings retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view settings"},
+                    "404": {"description": "Wiki not found"}
+                }
+            },
+            "put": {
+                "tags": ["Wiki"],
+                "summary": "Update wiki settings",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "permissions": {"type": "object"},
+                                    "features": {"type": "object"},
+                                    "accessControls": {"type": "object"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Wiki settings updated"},
+                    "400": {"description": "Invalid settings data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "GM access required"},
+                    "404": {"description": "Wiki not found"}
+                }
+            }
+        },
+        "/api/wiki/{wikiId}/pages": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "List wiki pages",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki pages retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view pages"},
+                    "404": {"description": "Wiki not found"}
+                }
+            },
+            "post": {
+                "tags": ["Wiki"],
+                "summary": "Create wiki page",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "content": {"type": "string"},
+                                    "pageType": {"type": "string"},
+                                    "isPublic": {"type": "boolean"}
+                                },
+                                "required": ["title", "content"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Wiki page created"},
+                    "400": {"description": "Invalid page data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to create pages"},
+                    "404": {"description": "Wiki not found"}
+                }
+            }
+        },
+        "/api/wiki/{wikiId}/pages/{pageId}": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "Get wiki page",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "pageId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki page retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view page"},
+                    "404": {"description": "Page not found"}
+                }
+            },
+            "put": {
+                "tags": ["Wiki"],
+                "summary": "Update wiki page",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "pageId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "content": {"type": "string"},
+                                    "pageType": {"type": "string"},
+                                    "isPublic": {"type": "boolean"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Wiki page updated"},
+                    "400": {"description": "Invalid page data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to edit page"},
+                    "404": {"description": "Page not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Wiki"],
+                "summary": "Delete wiki page",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "pageId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Wiki page deleted"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to delete page"},
+                    "404": {"description": "Page not found"}
+                }
+            }
+        },
+        "/api/wiki/templates/{pageType}": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "Get page template",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "pageType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": ["NPC", "Location", "Adventure Arc", "Session Notes", "Item", "Faction", "Timeline", "Custom"]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Page template retrieved"},
+                    "404": {"description": "Template not found"}
+                }
+            }
+        },
+        "/api/wiki/{wikiId}/attachments": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "List wiki attachments",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Attachments retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view attachments"},
+                    "404": {"description": "Wiki not found"}
+                }
+            },
+            "post": {
+                "tags": ["Wiki"],
+                "summary": "Upload attachment",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string", "format": "binary"},
+                                    "description": {"type": "string"}
+                                },
+                                "required": ["file"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Attachment uploaded"},
+                    "400": {"description": "Invalid file or size limit exceeded"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to upload attachments"},
+                    "404": {"description": "Wiki not found"}
+                }
+            }
+        },
+        "/api/wiki/{wikiId}/attachments/{attachmentId}": {
+            "get": {
+                "tags": ["Wiki"],
+                "summary": "Get attachment",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "attachmentId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Attachment retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to view attachment"},
+                    "404": {"description": "Attachment not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Wiki"],
+                "summary": "Delete attachment",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "wikiId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "attachmentId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Attachment deleted"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to delete attachment"},
+                    "404": {"description": "Attachment not found"}
+                }
+            }
+        },
+        "/api/notifications": {
+            "get": {
+                "tags": ["Notifications"],
+                "summary": "Get user notifications",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}},
+                    {"name": "unreadOnly", "in": "query", "schema": {"type": "boolean"}},
+                    {"name": "category", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Notifications retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "notifications": {"type": "array", "items": {"$ref": "#/components/schemas/Notification"}},
+                                        "pagination": {"type": "object"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "post": {
+                "tags": ["Notifications"],
+                "summary": "Create notification (admin only)",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "userId": {"type": "string"},
+                                    "notificationTypeId": {"type": "string"},
+                                    "title": {"type": "string"},
+                                    "message": {"type": "string"},
+                                    "data": {"type": "object"},
+                                    "priority": {"$ref": "#/components/schemas/NotificationPriority"},
+                                    "scheduledFor": {"type": "string", "format": "date-time"},
+                                    "channels": {"type": "array", "items": {"type": "string"}}
+                                },
+                                "required": ["userId", "title", "message"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Notification created"},
+                    "400": {"description": "Invalid notification data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/notifications/{id}": {
+            "get": {
+                "tags": ["Notifications"],
+                "summary": "Get specific notification",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Notification retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Notification"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not notification owner"},
+                    "404": {"description": "Notification not found"}
+                }
+            },
+            "patch": {
+                "tags": ["Notifications"],
+                "summary": "Mark notification as read/unread",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "read": {"type": "boolean"}
+                                },
+                                "required": ["read"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Notification status updated"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not notification owner"},
+                    "404": {"description": "Notification not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Notifications"],
+                "summary": "Delete notification",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Notification deleted"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not notification owner"},
+                    "404": {"description": "Notification not found"}
+                }
+            }
+        },
+        "/api/notifications/unread-count": {
+            "get": {
+                "tags": ["Notifications"],
+                "summary": "Get unread notification count",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {
+                        "description": "Unread count retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "count": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/notifications/mark-all-read": {
+            "post": {
+                "tags": ["Notifications"],
+                "summary": "Mark all notifications as read",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "All notifications marked as read"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/notifications/preferences": {
+            "get": {
+                "tags": ["Notifications"],
+                "summary": "Get notification preferences",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Notification preferences retrieved"},
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "put": {
+                "tags": ["Notifications"],
+                "summary": "Update notification preferences",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "emailNotifications": {"type": "boolean"},
+                                    "pushNotifications": {"type": "boolean"},
+                                    "gameUpdates": {"type": "boolean"},
+                                    "paymentUpdates": {"type": "boolean"},
+                                    "messageNotifications": {"type": "boolean"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Preferences updated successfully"},
+                    "400": {"description": "Invalid preferences data"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/conversations": {
+            "get": {
+                "tags": ["Messaging"],
+                "summary": "Get user conversations",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}}
+                ],
+                "responses": {
+                    "200": {"description": "Conversations retrieved successfully"},
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "post": {
+                "tags": ["Messaging"],
+                "summary": "Create new conversation",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string", "enum": ["DIRECT"]},
+                                    "recipientId": {"type": "string"}
+                                },
+                                "required": ["type", "recipientId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Conversation created successfully"},
+                    "400": {"description": "Invalid conversation data"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/conversations/{id}": {
+            "get": {
+                "tags": ["Messaging"],
+                "summary": "Get conversation details",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Conversation details retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not conversation participant"},
+                    "404": {"description": "Conversation not found"}
+                }
+            }
+        },
+        "/api/conversations/{id}/read": {
+            "post": {
+                "tags": ["Messaging"],
+                "summary": "Mark conversation as read",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Conversation marked as read"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not conversation participant"},
+                    "404": {"description": "Conversation not found"}
+                }
+            }
+        },
+        "/api/conversations/{id}/messages": {
+            "get": {
+                "tags": ["Messaging"],
+                "summary": "Get conversation messages",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    },
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}},
+                    {"name": "before", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {"description": "Messages retrieved successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not conversation participant"},
+                    "404": {"description": "Conversation not found"}
+                }
+            },
+            "post": {
+                "tags": ["Messaging"],
+                "summary": "Send message",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {"type": "string"},
+                                    "parentMessageId": {"type": "string"}
+                                },
+                                "required": ["content"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Message sent successfully"},
+                    "400": {"description": "Invalid message data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not conversation participant"},
+                    "404": {"description": "Conversation not found"}
+                }
+            }
+        },
+        "/api/invite/redeem": {
+            "post": {
+                "tags": ["Invite System"],
+                "summary": "Redeem invite code",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {"type": "string"},
+                                    "email": {"type": "string", "format": "email"}
+                                },
+                                "required": ["code", "email"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Invite code redeemed successfully"},
+                    "400": {"description": "Invalid or expired invite code"},
+                    "429": {"description": "Rate limit exceeded"}
+                }
+            }
+        },
+        "/api/invite/validate": {
+            "get": {
+                "tags": ["Invite System"],
+                "summary": "Validate invite code format",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Invite code validation result"},
+                    "400": {"description": "Invalid code format"}
+                }
+            }
+        },
+        "/api/user/invite-codes": {
+            "get": {
+                "tags": ["Invite System"],
+                "summary": "Get user's invite codes",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}},
+                    {"name": "includeExpired", "in": "query", "schema": {"type": "boolean"}},
+                    {"name": "includeExhausted", "in": "query", "schema": {"type": "boolean"}}
+                ],
+                "responses": {
+                    "200": {"description": "Invite codes retrieved with analytics"},
+                    "401": {"description": "Unauthorized"}
+                }
+            },
+            "post": {
+                "tags": ["Invite System"],
+                "summary": "Generate invite code",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "uses": {"type": "integer"},
+                                    "expiresAt": {"type": "string", "format": "date-time"},
+                                    "campaignTag": {"type": "string"},
+                                    "notes": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Invite code generated successfully"},
+                    "400": {"description": "Invalid code parameters"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Insufficient tier permissions"},
+                    "429": {"description": "Rate limit exceeded"}
+                }
+            }
+        },
+        "/api/user/invite-codes/{codeId}": {
+            "get": {
+                "tags": ["Invite System"],
+                "summary": "Get invite code details",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "codeId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Invite code details with redemption history"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not code owner"},
+                    "404": {"description": "Invite code not found"}
+                }
+            },
+            "patch": {
+                "tags": ["Invite System"],
+                "summary": "Update invite code",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "codeId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "isActive": {"type": "boolean"},
+                                    "notes": {"type": "string"},
+                                    "campaignTag": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Invite code updated successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not code owner"},
+                    "404": {"description": "Invite code not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Invite System"],
+                "summary": "Deactivate invite code",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "codeId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Invite code deactivated successfully"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not code owner"},
+                    "404": {"description": "Invite code not found"}
+                }
+            }
+        },
+        "/api/admin/invites": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "List all invite codes (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}},
+                    {"name": "tier", "in": "query", "schema": {"$ref": "#/components/schemas/AccessTier"}},
+                    {"name": "createdBy", "in": "query", "schema": {"type": "string"}},
+                    {"name": "isActive", "in": "query", "schema": {"type": "boolean"}},
+                    {"name": "campaignTag", "in": "query", "schema": {"type": "string"}},
+                    {"name": "sortBy", "in": "query", "schema": {"type": "string"}},
+                    {"name": "sortOrder", "in": "query", "schema": {"type": "string", "enum": ["asc", "desc"]}}
+                ],
+                "responses": {
+                    "200": {"description": "Invite codes with analytics retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            },
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Bulk create invite codes (admin)",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "count": {"type": "integer", "minimum": 1, "maximum": 1000},
+                                    "tier": {"$ref": "#/components/schemas/AccessTier"},
+                                    "grantsTier": {"$ref": "#/components/schemas/AccessTier"},
+                                    "uses": {"type": "integer"},
+                                    "expiresAt": {"type": "string", "format": "date-time"},
+                                    "campaignTag": {"type": "string"},
+                                    "notes": {"type": "string"}
+                                },
+                                "required": ["count", "tier", "grantsTier"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Invite codes created successfully"},
+                    "400": {"description": "Invalid bulk creation parameters"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "429": {"description": "Rate limit exceeded"}
+                }
+            }
+        },
+        "/api/admin/invites/analytics": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Get invite system analytics (admin)",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Platform-wide invite analytics retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/admin/whitelist": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "List whitelist entries (admin)",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Whitelist entries retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            },
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Add email to whitelist (admin)",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "email": {"type": "string", "format": "email"},
+                                    "tier": {"$ref": "#/components/schemas/AccessTier"},
+                                    "notes": {"type": "string"}
+                                },
+                                "required": ["email", "tier"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Email added to whitelist"},
+                    "400": {"description": "Invalid email or duplicate entry"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/admin/whitelist/{id}": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Get whitelist entry (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Whitelist entry retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "Whitelist entry not found"}
+                }
+            },
+            "patch": {
+                "tags": ["Analytics"],
+                "summary": "Update whitelist entry (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "tier": {"$ref": "#/components/schemas/AccessTier"},
+                                    "notes": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Whitelist entry updated"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "Whitelist entry not found"}
+                }
+            },
+            "delete": {
+                "tags": ["Analytics"],
+                "summary": "Remove from whitelist (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Entry removed from whitelist"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "Whitelist entry not found"}
+                }
+            }
+        },
+        "/api/admin/notifications/system": {
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Send system notification (admin)",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "message": {"type": "string"},
+                                    "priority": {"$ref": "#/components/schemas/NotificationPriority"},
+                                    "targetUsers": {"type": "array", "items": {"type": "string"}},
+                                    "scheduledFor": {"type": "string", "format": "date-time"}
+                                },
+                                "required": ["title", "message"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "System notification sent"},
+                    "400": {"description": "Invalid notification data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/admin/users/{id}/make-admin": {
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Grant admin access (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Admin access granted"},
+                    "400": {"description": "Cannot grant admin to self"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "User not found"}
+                }
+            }
+        },
+        "/api/admin/users/{id}/revoke-admin": {
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Revoke admin access (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Admin access revoked"},
+                    "400": {"description": "Cannot revoke own admin access"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "User not found"}
+                }
+            }
+        },
+        "/api/admin/users/{id}/delete": {
+            "delete": {
+                "tags": ["Analytics"],
+                "summary": "Delete user account (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "User account deleted"},
+                    "400": {"description": "Cannot delete own account"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "User not found"}
+                }
+            }
+        },
+        "/api/admin/games/{id}": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Get game details (admin view)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Game details with admin information"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "Game not found"}
+                }
+            },
+            "put": {
+                "tags": ["Analytics"],
+                "summary": "Update any game (admin override)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Game"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Game updated successfully"},
+                    "400": {"description": "Invalid game data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/admin/cleanup-interests": {
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Cleanup orphaned interests (admin)",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Cleanup completed"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/admin/transactions": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Get all platform transactions (admin)",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}}
+                ],
+                "responses": {
+                    "200": {"description": "Platform transactions retrieved"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/admin/test-payment": {
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Test payment processing (admin)",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Payment test completed"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/cron/auto-charge-sessions": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Auto-start/complete sessions (cron)",
+                "security": [],
+                "responses": {
+                    "200": {"description": "Session processing completed with results"},
+                    "401": {"description": "Invalid cron secret"}
+                }
+            }
+        },
+        "/api/debug/transactions": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Debug transaction data",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Transaction debug data retrieved"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/dev/reset-booking": {
+            "post": {
+                "tags": ["Analytics"],
+                "summary": "Reset booking for testing",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Booking reset completed"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/dev/reset-payments": {
+            "post": {
+                "tags": ["Development"],
+                "summary": "Reset all payment data",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {"description": "Payment data reset completed"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/dev/reset-payments/{gameId}": {
+            "post": {
+                "tags": ["Development"],
+                "summary": "Reset payments for specific game",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "gameId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"}
+                    }
+                ],
+                "responses": {
+                    "200": {"description": "Game payment data reset completed"},
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Game not found"}
+                }
+            }
+        },
+        "/api/reviews": {
+            "get": {
+                "tags": ["Reviews"],
+                "summary": "Get reviews with filtering",
+                "description": "Retrieve reviews for users with optional filtering by user and type",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "query",
+                        "schema": {"type": "string"},
+                        "description": "Filter reviews for a specific user"
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "schema": {"type": "string", "enum": ["given", "received"]},
+                        "description": "Filter by review type"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+                        "description": "Number of results to return"
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "schema": {"type": "integer", "minimum": 0, "default": 0},
+                        "description": "Number of results to skip"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reviews retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reviews": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/ReviewWithRelations"}
+                                        },
+                                        "total": {"type": "integer"},
+                                        "limit": {"type": "integer"},
+                                        "offset": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {"description": "Invalid query parameters"},
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/reviews/pending": {
+            "get": {
+                "tags": ["Reviews"],
+                "summary": "Get pending reviews",
+                "description": "Get bookings that the current user can review (completed sessions within 30 days)",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {
+                        "description": "Pending reviews retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "bookings": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/PendingReview"}
+                                        },
+                                        "total": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/reviews/stats/{userId}": {
+            "get": {
+                "tags": ["Reviews"],
+                "summary": "Get review statistics for a user",
+                "description": "Get comprehensive review statistics including averages by category and reviewer type",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "The ID of the user to get stats for"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Review statistics retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/ReviewStats"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"}
+                }
+            }
+        },
+        "/api/bookings/{id}/review": {
+            "get": {
+                "tags": ["Reviews"],
+                "summary": "Get review for a booking",
+                "description": "Retrieve the review associated with a specific booking",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "The booking ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Review retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/ReviewWithRelations"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "404": {"description": "Review not found"}
+                }
+            },
+            "post": {
+                "tags": ["Reviews"],
+                "summary": "Create a review for a booking",
+                "description": "Create a new review for a completed booking",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "The booking ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/CreateReviewRequest"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Review created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Review"}
+                            }
+                        }
+                    },
+                    "400": {"description": "Invalid input data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not eligible to review this booking"},
+                    "409": {"description": "Review already exists"}
+                }
+            },
+            "put": {
+                "tags": ["Reviews"],
+                "summary": "Update an existing review",
+                "description": "Update a review that was previously created by the current user",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {"type": "string"},
+                        "description": "The booking ID"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/UpdateReviewRequest"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Review updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Review"}
+                            }
+                        }
+                    },
+                    "400": {"description": "Invalid input data"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Not authorized to update this review"},
+                    "404": {"description": "Review not found"}
+                }
+            }
+        },
+        "/api/cron": {
+            "get": {
+                "tags": ["Cron Jobs"],
+                "summary": "Get cron job status",
+                "description": "Check the status and configuration of scheduled cron jobs",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {
+                        "description": "Cron job status retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "jobs": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {"type": "string"},
+                                                    "schedule": {"type": "string"},
+                                                    "lastRun": {"type": "string", "format": "date-time"},
+                                                    "nextRun": {"type": "string", "format": "date-time"},
+                                                    "status": {"type": "string", "enum": ["active", "disabled", "error"]}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/cron/auto-charge-sessions": {
+            "post": {
+                "tags": ["Cron Jobs"],
+                "summary": "Auto-charge sessions cron job",
+                "description": "Automatically charge players for scheduled sessions that are starting soon",
+                "security": [{"nextAuthSession": []}],
+                "responses": {
+                    "200": {
+                        "description": "Auto-charge job completed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "processedSessions": {"type": "integer"},
+                                        "successfulCharges": {"type": "integer"},
+                                        "failedCharges": {"type": "integer"},
+                                        "errors": {"type": "array", "items": {"type": "string"}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "500": {"description": "Cron job execution failed"}
+                }
+            }
+        },
+        "/api/debug/transactions": {
+            "get": {
+                "tags": ["Development"],
+                "summary": "Debug transaction data",
+                "description": "Get detailed transaction information for debugging purposes",
+                "security": [{"nextAuthSession": []}],
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "query",
+                        "schema": {"type": "string"},
+                        "description": "Filter by user ID"
+                    },
+                    {
+                        "name": "gameId",
+                        "in": "query",
+                        "schema": {"type": "string"},
+                        "description": "Filter by game ID"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {"type": "integer", "default": 50},
+                        "description": "Maximum number of transactions to return"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaction debug data retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "transactions": {"type": "array", "items": {"type": "object"}},
+                                        "summary": {"type": "object"},
+                                        "errors": {"type": "array", "items": {"type": "string"}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"}
+                }
+            }
+        },
+        "/api/dev/reset-booking": {
+            "post": {
+                "tags": ["Development"],
+                "summary": "Reset booking for development",
+                "description": "Reset a specific booking to its initial state for testing purposes",
+                "security": [{"nextAuthSession": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "bookingId": {"type": "string"}
+                                },
+                                "required": ["bookingId"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Booking reset successfully"},
+                    "400": {"description": "Invalid booking ID"},
+                    "401": {"description": "Unauthorized"},
+                    "403": {"description": "Admin access required"},
+                    "404": {"description": "Booking not found"}
+                }
+            }
+        },
+        "/api/openapi": {
+            "get": {
+                "tags": ["API Documentation"],
+                "summary": "Get OpenAPI specification",
+                "description": "Retrieve the complete OpenAPI specification for this API",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "OpenAPI specification retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "OpenAPI 3.0 specification document"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

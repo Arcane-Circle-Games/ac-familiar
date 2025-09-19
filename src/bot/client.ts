@@ -5,7 +5,9 @@ import { config } from '../utils/config';
 export interface Command {
   name: string;
   description: string;
+  options?: any[];
   execute: (interaction: any) => Promise<void>;
+  autocomplete?: (interaction: any) => Promise<void>;
 }
 
 export class ArcaneClient extends Client {
