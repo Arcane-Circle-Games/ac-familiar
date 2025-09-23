@@ -1,0 +1,47 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TranscriptionSession {
+  id               String   @id @default(uuid())
+  gameId           String?  @map("game_id")
+  discordChannelId String?  @map("discord_channel_id")
+  discordGuildId   String?  @map("discord_guild_id")
+  status           String   // 'LIVE', 'COMPLETED', 'FAILED'
+  startedAt        DateTime @map("started_at")
+  endedAt          DateTime? @map("ended_at")
+  fullTranscript   String?  @map("full_transcript") @db.Text
+  wordCount        Int?     @map("word_count")
+  participantCount Int?     @map("participant_count")
+
+  segments         TranscriptionSegment[]
+
+  @@map("transcription_sessions")
+}
+
+model TranscriptionSegment {
+  id           String   @id @default(uuid())
+  sessionId    String   @map("session_id")
+  session      TranscriptionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId       String   @map("user_id")
+  username     String
+  text         String   @db.Text
+  timestamp    DateTime
+  confidence   Float
+  duration     Float?   // Duration in seconds if available
+
+  @@index([sessionId, timestamp])
+  @@index([userId])
+  @@map("transcription_segments")
+}
+
+// Keep existing models if they exist
+// This schema is additive to your existing structure
