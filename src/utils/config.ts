@@ -15,7 +15,7 @@ const configSchema = z.object({
   VERCEL_BYPASS_TOKEN: z.string().optional(),
   
   // Database Configuration
-  DATABASE_URL: z.string().url('Invalid database URL'),
+  DATABASE_URL: z.string().url('Invalid database URL').optional(),
   
   // Redis Configuration
   REDIS_URL: z.string().default('redis://localhost:6379'),
