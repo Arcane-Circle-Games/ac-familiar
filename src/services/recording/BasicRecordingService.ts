@@ -1,26 +1,78 @@
 import { VoiceReceiver, EndBehaviorType } from '@discordjs/voice';
+import { Transform } from 'stream';
+import OpusScript from 'opusscript';
+import { Guild } from 'discord.js';
 import { logger } from '../../utils/logger';
+import { multiTrackExporter, ExportedRecording } from '../processing/MultiTrackExporter';
+import { AudioProcessingOptions } from '../processing/AudioProcessor';
 
-interface AudioSegment {
+interface UserRecording {
   userId: string;
   username: string;
   startTime: number;
   endTime?: number;
   bufferChunks: Buffer[];
+  decoder: OpusDecoderStream;
+  opusStream?: any; // AudioReceiveStream from Discord
+  pcmStream?: any; // Decoded PCM stream
 }
 
 interface SessionMetadata {
   sessionId: string;
   channelId: string;
+  guildName: string;
+  guild: Guild;
   startTime: number;
   endTime?: number;
-  segments: AudioSegment[];
+  userRecordings: Map<string, UserRecording>;
   participantCount: number;
+}
+
+/**
+ * Custom Opus decoder using OpusScript (pure JS, no native bindings)
+ */
+class OpusDecoderStream extends Transform {
+  private decoder: OpusScript;
+  private packetCount: number = 0;
+  private totalInputBytes: number = 0;
+  private totalOutputBytes: number = 0;
+
+  constructor() {
+    super();
+    // 48kHz, 2 channels (stereo)
+    this.decoder = new OpusScript(48000, 2);
+  }
+
+  override _transform(chunk: Buffer, _encoding: string, callback: Function): void {
+    try {
+      this.packetCount++;
+      this.totalInputBytes += chunk.length;
+
+      // Decode Opus packet to PCM (returns Int16Array)
+      const pcm = this.decoder.decode(chunk);
+      if (pcm && pcm.length > 0) {
+        // OpusScript returns Int16Array - convert to Buffer properly
+        // Use Buffer.from with the typed array directly, not the underlying buffer
+        const buffer = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+        this.totalOutputBytes += buffer.length;
+
+        // Log every 50 packets to monitor decode quality
+        if (this.packetCount % 50 === 0) {
+          logger.debug(`Opus decode stats: packets=${this.packetCount}, in=${this.totalInputBytes}B, out=${this.totalOutputBytes}B, pcmSamples=${pcm.length}`);
+        }
+
+        this.push(buffer);
+      }
+      callback();
+    } catch (error) {
+      logger.error('Opus decode error:', error as Error);
+      callback();
+    }
+  }
 }
 
 export class BasicRecordingService {
   private activeSessions: Map<string, SessionMetadata> = new Map();
-  private activeStreams: Map<string, AudioSegment> = new Map();
 
   /**
    * Start recording a voice session
@@ -28,7 +80,9 @@ export class BasicRecordingService {
   async startRecording(
     sessionId: string,
     voiceReceiver: VoiceReceiver,
-    channelId: string
+    channelId: string,
+    guildName: string,
+    guild: Guild
   ): Promise<void> {
     logger.info(`Starting recording session: ${sessionId}`);
 
@@ -39,12 +93,16 @@ export class BasicRecordingService {
     const metadata: SessionMetadata = {
       sessionId,
       channelId,
+      guildName,
+      guild,
       startTime: Date.now(),
-      segments: [],
+      userRecordings: new Map(),
       participantCount: 0
     };
 
     this.activeSessions.set(sessionId, metadata);
+
+    // Start continuous recording for all users in the channel
     this.setupVoiceReceiver(voiceReceiver, sessionId);
 
     logger.info(`Recording session ${sessionId} started successfully`);
@@ -63,27 +121,32 @@ export class BasicRecordingService {
 
     session.endTime = Date.now();
 
-    // Process any remaining active streams
-    const activeStreamIds = Array.from(this.activeStreams.keys())
-      .filter(streamId => streamId.startsWith(sessionId));
+    // Finalize all user recordings
+    for (const [userId, userRecording] of session.userRecordings.entries()) {
+      userRecording.endTime = Date.now();
 
-    for (const streamId of activeStreamIds) {
-      const segment = this.activeStreams.get(streamId);
-      if (segment && !segment.endTime) {
-        segment.endTime = Date.now();
-        session.segments.push(segment);
-        this.activeStreams.delete(streamId);
+      // Destroy streams to trigger final data flush
+      if (userRecording.opusStream) {
+        userRecording.opusStream.destroy();
       }
+      if (userRecording.pcmStream) {
+        userRecording.pcmStream.destroy();
+      }
+
+      const duration = userRecording.endTime - userRecording.startTime;
+      const audioSize = userRecording.bufferChunks.reduce((total, chunk) => total + chunk.length, 0);
+
+      logger.debug(`User ${userId} recording finalized. Duration: ${duration}ms, Size: ${audioSize} bytes, Chunks: ${userRecording.bufferChunks.length}`);
     }
 
     // Update participant count
-    session.participantCount = new Set(session.segments.map(s => s.userId)).size;
+    session.participantCount = session.userRecordings.size;
 
     // Clean up
     this.activeSessions.delete(sessionId);
 
     const duration = session.endTime - session.startTime;
-    logger.info(`Recording session ${sessionId} stopped. Duration: ${duration}ms, Segments: ${session.segments.length}, Participants: ${session.participantCount}`);
+    logger.info(`Recording session ${sessionId} stopped. Duration: ${duration}ms, Users: ${session.participantCount}`);
 
     return session;
   }
@@ -94,7 +157,7 @@ export class BasicRecordingService {
   getSessionStats(sessionId: string): {
     isRecording: boolean;
     duration: number;
-    segmentCount: number;
+    userCount: number;
     participantCount: number;
   } | null {
     const session = this.activeSessions.get(sessionId);
@@ -105,8 +168,8 @@ export class BasicRecordingService {
     return {
       isRecording: true,
       duration: Date.now() - session.startTime,
-      segmentCount: session.segments.length,
-      participantCount: new Set(session.segments.map(s => s.userId)).size
+      userCount: session.userRecordings.size,
+      participantCount: session.userRecordings.size
     };
   }
 
@@ -125,101 +188,101 @@ export class BasicRecordingService {
   }
 
   /**
-   * Set up voice receiver to capture per-user audio streams
+   * Set up voice receiver to capture per-user audio streams continuously
    */
   private setupVoiceReceiver(receiver: VoiceReceiver, sessionId: string): void {
     logger.debug(`Setting up voice receiver for session ${sessionId}`);
 
-    receiver.speaking.on('start', (userId) => {
+    // Start recording for users when they begin speaking
+    receiver.speaking.on('start', async (userId) => {
+      const session = this.activeSessions.get(sessionId);
+      if (!session) {
+        logger.warn(`Session ${sessionId} not found when user ${userId} started speaking`);
+        return;
+      }
+
       // Skip if this is a bot
-      if (this.isBot(userId)) {
+      if (await this.isBot(userId, session.guild)) {
         logger.debug(`Skipping bot user ${userId}`);
         return;
       }
 
-      const segmentId = `${sessionId}_${userId}_${Date.now()}`;
-      const startTime = Date.now();
+      // Check if we're already recording this user
+      if (session.userRecordings.has(userId)) {
+        logger.debug(`Already recording user ${userId} in session ${sessionId}`);
+        return;
+      }
 
-      logger.debug(`User ${userId} started speaking in session ${sessionId}`);
+      logger.info(`Starting continuous recording for user ${userId} in session ${sessionId}`);
 
-      const segment: AudioSegment = {
+      // Create continuous recording for this user
+      const userRecording: UserRecording = {
         userId,
-        username: this.getUsername(userId), // This will be a placeholder for now
-        startTime,
-        bufferChunks: []
+        username: await this.getUsername(userId, session.guild),
+        startTime: Date.now(),
+        bufferChunks: [],
+        decoder: new OpusDecoderStream()
       };
 
-      this.activeStreams.set(segmentId, segment);
-
-      // Subscribe to user's audio stream
-      const audioStream = receiver.subscribe(userId, {
+      // Subscribe to user's audio stream with MANUAL end behavior (continuous)
+      const opusStream = receiver.subscribe(userId, {
         end: {
-          behavior: EndBehaviorType.AfterSilence,
-          duration: 1000 // 1 second of silence ends the stream
+          behavior: EndBehaviorType.Manual // Never auto-end, we control when to stop
         }
       });
 
-      // Collect audio data
-      audioStream.on('data', (chunk: Buffer) => {
-        if (segment.bufferChunks) {
-          segment.bufferChunks.push(chunk);
-        }
+      // Pipe Opus stream through decoder to get PCM
+      const pcmStream = opusStream.pipe(userRecording.decoder);
+
+      // Store stream references for cleanup
+      userRecording.opusStream = opusStream;
+      userRecording.pcmStream = pcmStream;
+
+      // Collect ALL PCM audio data continuously
+      pcmStream.on('data', (chunk: Buffer) => {
+        userRecording.bufferChunks.push(chunk);
       });
 
-      audioStream.on('end', () => {
-        this.handleStreamEnd(sessionId, segmentId, segment);
+      pcmStream.on('error', (error) => {
+        logger.error(`PCM stream error for user ${userId} in session ${sessionId}:`, error);
       });
 
-      audioStream.on('error', (error) => {
-        logger.error(`Audio stream error for user ${userId} in session ${sessionId}:`, error);
-        this.handleStreamEnd(sessionId, segmentId, segment);
+      // Handle Opus stream errors
+      opusStream.on('error', (error) => {
+        logger.error(`Opus stream error for user ${userId} in session ${sessionId}:`, error);
       });
+
+      // Add to session
+      session.userRecordings.set(userId, userRecording);
     });
   }
 
-  /**
-   * Handle when an audio stream ends
-   */
-  private handleStreamEnd(sessionId: string, segmentId: string, segment: AudioSegment): void {
-    const session = this.activeSessions.get(sessionId);
-    if (!session) {
-      logger.warn(`Session ${sessionId} not found when handling stream end`);
-      return;
-    }
-
-    segment.endTime = Date.now();
-    const duration = segment.endTime - segment.startTime;
-    const audioSize = segment.bufferChunks.reduce((total, chunk) => total + chunk.length, 0);
-
-    logger.debug(`Audio segment ended for user ${segment.userId} in session ${sessionId}. Duration: ${duration}ms, Size: ${audioSize} bytes`);
-
-    // Only store segments with actual audio data
-    if (segment.bufferChunks.length > 0 && audioSize > 0) {
-      session.segments.push({
-        ...segment,
-        bufferChunks: [...segment.bufferChunks] // Copy the buffer chunks
-      });
-    }
-
-    this.activeStreams.delete(segmentId);
-  }
 
   /**
    * Check if a user ID represents a bot
-   * TODO: Implement proper bot detection using Discord client
    */
-  private isBot(_userId: string): boolean {
-    // For now, just return false. We'll enhance this when integrating with the Discord client
-    return false;
+  private async isBot(userId: string, guild: Guild): Promise<boolean> {
+    try {
+      const member = await guild.members.fetch(userId);
+      return member.user.bot;
+    } catch (error) {
+      logger.warn(`Failed to check if user ${userId} is a bot`, { error });
+      return false;
+    }
   }
 
   /**
-   * Get username for a user ID
-   * TODO: Implement proper username lookup using Discord client
+   * Get username for a user ID from Discord guild
    */
-  private getUsername(userId: string): string {
-    // For now, return a placeholder. We'll enhance this when integrating with the Discord client
-    return `User_${userId.slice(-4)}`;
+  private async getUsername(userId: string, guild: Guild): Promise<string> {
+    try {
+      const member = await guild.members.fetch(userId);
+      // Use display name (nickname) if available, otherwise username
+      return member.displayName || member.user.username;
+    } catch (error) {
+      logger.warn(`Failed to fetch username for user ${userId}`, { error });
+      return `User_${userId.slice(-4)}`;
+    }
   }
 
   /**
@@ -233,16 +296,9 @@ export class BasicRecordingService {
 
     let totalSize = 0;
 
-    // Count active streams
-    for (const [streamId, segment] of this.activeStreams.entries()) {
-      if (streamId.startsWith(sessionId)) {
-        totalSize += segment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      }
-    }
-
-    // Count completed segments
-    for (const segment of session.segments) {
-      totalSize += segment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    // Count all user recordings
+    for (const userRecording of session.userRecordings.values()) {
+      totalSize += userRecording.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
     }
 
     return totalSize;
@@ -254,17 +310,173 @@ export class BasicRecordingService {
   emergencyCleanup(sessionId: string): void {
     logger.warn(`Emergency cleanup for session ${sessionId}`);
 
+    const session = this.activeSessions.get(sessionId);
+    if (session) {
+      // Destroy all user recording streams
+      for (const userRecording of session.userRecordings.values()) {
+        if (userRecording.opusStream) {
+          userRecording.opusStream.destroy();
+        }
+        if (userRecording.pcmStream) {
+          userRecording.pcmStream.destroy();
+        }
+      }
+    }
+
     // Remove session
     this.activeSessions.delete(sessionId);
 
-    // Remove active streams for this session
-    const streamIdsToDelete = Array.from(this.activeStreams.keys())
-      .filter(streamId => streamId.startsWith(sessionId));
+    logger.info(`Emergency cleanup completed for session ${sessionId}`);
+  }
 
-    for (const streamId of streamIdsToDelete) {
-      this.activeStreams.delete(streamId);
+  /**
+   * Export session audio to files
+   */
+  async exportSessionToFiles(
+    sessionId: string,
+    options?: AudioProcessingOptions
+  ): Promise<ExportedRecording> {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
     }
 
-    logger.info(`Emergency cleanup completed for session ${sessionId}`);
+    if (!session.endTime) {
+      throw new Error(`Session ${sessionId} is still recording`);
+    }
+
+    logger.info('Exporting session to files', {
+      sessionId,
+      userCount: session.userRecordings.size,
+      participantCount: session.participantCount
+    });
+
+    // Convert user recordings to array format for export
+    const userTracks = Array.from(session.userRecordings.values())
+      .filter(rec => rec.endTime !== undefined && rec.bufferChunks.length > 0)
+      .map(rec => ({
+        userId: rec.userId,
+        username: rec.username,
+        startTime: rec.startTime,
+        endTime: rec.endTime!,
+        bufferChunks: rec.bufferChunks
+      }));
+
+    if (userTracks.length === 0) {
+      throw new Error('No user recordings to export');
+    }
+
+    // Export all user tracks to audio files
+    const exportedRecording = await multiTrackExporter.exportMultiTrack(
+      userTracks,
+      {
+        sessionId: session.sessionId,
+        sessionStartTime: session.startTime,
+        sessionEndTime: session.endTime,
+        guildName: session.guildName,
+        ...options
+      }
+    );
+
+    logger.info('Session exported successfully', {
+      sessionId,
+      trackCount: exportedRecording.tracks.length,
+      totalSize: exportedRecording.totalSize,
+      outputDirectory: exportedRecording.outputDirectory
+    });
+
+    return exportedRecording;
+  }
+
+  /**
+   * Stop recording and export to files in one operation
+   */
+  async stopAndExport(
+    sessionId: string,
+    options?: AudioProcessingOptions
+  ): Promise<{ sessionData: SessionMetadata; exportedRecording: ExportedRecording }> {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found or not recording`);
+    }
+
+    logger.info(`Stopping and exporting recording session: ${sessionId}`);
+
+    session.endTime = Date.now();
+
+    // Finalize all user recordings
+    for (const [userId, userRecording] of session.userRecordings.entries()) {
+      userRecording.endTime = Date.now();
+
+      // Destroy streams to trigger final data flush
+      if (userRecording.opusStream) {
+        userRecording.opusStream.destroy();
+      }
+      if (userRecording.pcmStream) {
+        userRecording.pcmStream.destroy();
+      }
+
+      const duration = userRecording.endTime - userRecording.startTime;
+      const audioSize = userRecording.bufferChunks.reduce((total, chunk) => total + chunk.length, 0);
+
+      logger.debug(`User ${userId} recording finalized. Duration: ${duration}ms, Size: ${audioSize} bytes, Chunks: ${userRecording.bufferChunks.length}`);
+    }
+
+    // Update participant count
+    session.participantCount = session.userRecordings.size;
+
+    const duration = session.endTime - session.startTime;
+    logger.info(`Recording session ${sessionId} stopped. Duration: ${duration}ms, Users: ${session.participantCount}`);
+
+    // Convert user recordings to array format for export
+    const userTracks = Array.from(session.userRecordings.values())
+      .filter(rec => rec.endTime !== undefined && rec.bufferChunks.length > 0)
+      .map(rec => ({
+        userId: rec.userId,
+        username: rec.username,
+        startTime: rec.startTime,
+        endTime: rec.endTime!,
+        bufferChunks: rec.bufferChunks
+      }));
+
+    if (userTracks.length === 0) {
+      throw new Error('No user recordings to export');
+    }
+
+    // Export all user tracks to audio files
+    const exportedRecording = await multiTrackExporter.exportMultiTrack(
+      userTracks,
+      {
+        sessionId: session.sessionId,
+        sessionStartTime: session.startTime,
+        sessionEndTime: session.endTime,
+        guildName: session.guildName,
+        ...options
+      }
+    );
+
+    logger.info('Session exported successfully', {
+      sessionId,
+      trackCount: exportedRecording.tracks.length,
+      totalSize: exportedRecording.totalSize,
+      outputDirectory: exportedRecording.outputDirectory
+    });
+
+    // Create sessionData object to return (keep original structure for compatibility)
+    const sessionData: SessionMetadata = {
+      sessionId: session.sessionId,
+      channelId: session.channelId,
+      guildName: session.guildName,
+      guild: session.guild,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      userRecordings: session.userRecordings,
+      participantCount: session.participantCount
+    };
+
+    // Clean up - remove from active sessions
+    this.activeSessions.delete(sessionId);
+
+    return { sessionData, exportedRecording };
   }
 }

@@ -3,6 +3,8 @@ import { VoiceConnectionManager } from '../voice/VoiceConnectionManager';
 import { BasicRecordingService } from './BasicRecordingService';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
+import { ExportedRecording, multiTrackExporter } from '../processing/MultiTrackExporter';
+import { SessionTranscript } from '../../types/transcription';
 
 interface ActiveSession {
   sessionId: string;
@@ -41,8 +43,12 @@ export class RecordingManager {
       // Connect to voice channel
       const connection = await this.voiceManager.joinChannel(voiceChannel);
 
+      // Get guild name and guild object
+      const guildName = voiceChannel.guild.name;
+      const guild = voiceChannel.guild;
+
       // Start recording
-      await this.recordingService.startRecording(sessionId, connection.receiver, channelId);
+      await this.recordingService.startRecording(sessionId, connection.receiver, channelId, guildName, guild);
 
       // Track the session
       this.activeSessions.set(channelId, {
@@ -77,12 +83,13 @@ export class RecordingManager {
   /**
    * Stop recording in a voice channel
    */
-  async stopRecording(channelId: string): Promise<{
+  async stopRecording(channelId: string, exportToFiles: boolean = false, autoTranscribe: boolean = false): Promise<{
     sessionId: string;
     duration: number;
-    segments: number;
     participants: number;
     message: string;
+    exportedRecording?: ExportedRecording;
+    transcript?: SessionTranscript;
   }> {
     const activeSession = this.activeSessions.get(channelId);
     if (!activeSession) {
@@ -92,10 +99,26 @@ export class RecordingManager {
     const { sessionId } = activeSession;
 
     try {
-      logger.info(`Stopping recording in channel ${channelId}, session ${sessionId}`);
+      logger.info(`Stopping recording in channel ${channelId}, session ${sessionId}`, {
+        exportToFiles,
+        autoTranscribe
+      });
 
-      // Stop the recording service
-      const sessionData = await this.recordingService.stopRecording(sessionId);
+      let sessionData;
+      let exportedRecording: ExportedRecording | undefined;
+
+      if (exportToFiles) {
+        // Stop and export in one operation
+        const result = await this.recordingService.stopAndExport(sessionId, {
+          format: 'wav',
+          outputDir: './recordings'
+        });
+        sessionData = result.sessionData;
+        exportedRecording = result.exportedRecording;
+      } else {
+        // Just stop without exporting
+        sessionData = await this.recordingService.stopRecording(sessionId);
+      }
 
       // Leave the voice channel
       await this.voiceManager.leaveChannel(channelId);
@@ -104,17 +127,52 @@ export class RecordingManager {
       this.activeSessions.delete(channelId);
 
       const duration = sessionData.endTime! - sessionData.startTime;
-      const participants = new Set(sessionData.segments.map(s => s.userId)).size;
+      const participants = sessionData.participantCount;
 
-      logger.info(`Recording stopped successfully: session ${sessionId}, duration: ${duration}ms, segments: ${sessionData.segments.length}, participants: ${participants}`);
+      logger.info(`Recording stopped successfully: session ${sessionId}, duration: ${duration}ms, participants: ${participants}`);
 
-      return {
+      let message = `🛑 Recording stopped!\n\n**Session:** \`${sessionId}\`\n**Duration:** ${Math.round(duration / 1000)}s\n**Participants:** ${participants}`;
+
+      if (exportedRecording) {
+        message += `\n\n✅ **Files saved to:** \`${exportedRecording.outputDirectory}\`\n**Track count:** ${exportedRecording.tracks.length}\n**Total size:** ${this.formatBytes(exportedRecording.totalSize)}`;
+      } else {
+        message += `\n\n*Audio data captured in memory only.*`;
+      }
+
+      const result: {
+        sessionId: string;
+        duration: number;
+        participants: number;
+        message: string;
+        exportedRecording?: ExportedRecording;
+        transcript?: SessionTranscript;
+      } = {
         sessionId,
         duration: Math.round(duration / 1000), // Convert to seconds
-        segments: sessionData.segments.length,
         participants,
-        message: `🛑 Recording stopped!\n\n**Session:** \`${sessionId}\`\n**Duration:** ${Math.round(duration / 1000)}s\n**Audio segments:** ${sessionData.segments.length}\n**Participants:** ${participants}\n\n*Audio data captured in memory for Phase 1 testing.*`
+        message
       };
+
+      if (exportedRecording) {
+        result.exportedRecording = exportedRecording;
+      }
+
+      // Auto-transcribe if requested and files were exported
+      if (autoTranscribe && exportedRecording) {
+        try {
+          logger.info(`Auto-transcribing session ${sessionId}`);
+          const transcript = await this.transcribeSession(sessionId);
+          result.transcript = transcript;
+          message += `\n\n✅ **Transcription completed**\n**Word count:** ${transcript.wordCount}\n**Confidence:** ${(transcript.averageConfidence * 100).toFixed(1)}%`;
+          result.message = message;
+        } catch (transcribeError) {
+          logger.error(`Auto-transcription failed for session ${sessionId}:`, transcribeError as Error);
+          message += `\n\n⚠️ **Transcription failed:** ${transcribeError instanceof Error ? transcribeError.message : 'Unknown error'}`;
+          result.message = message;
+        }
+      }
+
+      return result;
 
     } catch (error) {
       logger.error(`Failed to stop recording in channel ${channelId}:`, error);
@@ -141,7 +199,7 @@ export class RecordingManager {
     startedBy?: string | undefined;
     duration?: number | undefined;
     stats?: {
-      segments: number;
+      users: number;
       participants: number;
       memoryUsage: number;
     } | undefined;
@@ -161,7 +219,7 @@ export class RecordingManager {
       startedBy: activeSession.startedBy,
       duration: stats?.duration ?? 0,
       stats: stats ? {
-        segments: stats.segmentCount,
+        users: stats.userCount,
         participants: stats.participantCount,
         memoryUsage
       } : undefined
@@ -215,5 +273,55 @@ export class RecordingManager {
       totalUsage += this.recordingService.getSessionMemoryUsage(session.sessionId);
     }
     return totalUsage;
+  }
+
+  /**
+   * Transcribe an existing recording session
+   */
+  async transcribeSession(sessionId: string, outputDir: string = './recordings'): Promise<SessionTranscript> {
+    try {
+      logger.info(`Transcribing session ${sessionId}`);
+
+      // Use multiTrackExporter to transcribe
+      const transcript = await multiTrackExporter.transcribeSession(sessionId, outputDir);
+
+      logger.info(`Transcription completed for session ${sessionId}`, {
+        wordCount: transcript.wordCount,
+        participants: transcript.participantCount,
+        confidence: transcript.averageConfidence.toFixed(2)
+      });
+
+      return transcript;
+    } catch (error) {
+      logger.error(`Failed to transcribe session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load transcript for a session
+   */
+  async loadTranscript(sessionId: string, outputDir: string = './recordings'): Promise<SessionTranscript | null> {
+    return multiTrackExporter.loadTranscript(sessionId, outputDir);
+  }
+
+  /**
+   * Check if session has transcript
+   */
+  async hasTranscript(sessionId: string, outputDir: string = './recordings'): Promise<boolean> {
+    return multiTrackExporter.hasTranscript(sessionId, outputDir);
+  }
+
+  /**
+   * Format bytes to human-readable string
+   */
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 }

@@ -42,8 +42,8 @@ const configSchema = z.object({
   QUEUE_REDIS_PASSWORD: z.string().optional(),
   
   // Webhook Configuration
-  WEBHOOK_URL: z.string().url().optional(),
-  WEBHOOK_SECRET: z.string().optional()
+  WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
+  WEBHOOK_SECRET: z.string().optional().or(z.literal(''))
 });
 
 const parseConfig = () => {
