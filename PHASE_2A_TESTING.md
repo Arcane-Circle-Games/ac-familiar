@@ -1,17 +1,20 @@
-# Phase 2A Testing Guide - Audio File Export
+# Phase 2A + 2B Testing Guide - Audio Recording & Transcription
 
 ## Status: ✅ Complete & Production Ready
 
-Phase 2A delivers **professional-quality continuous audio recording** to WAV files with multi-track support. Recordings are saved locally to `./recordings/` in your project directory.
+Phases 2A and 2B deliver **professional-quality continuous audio recording** with **AI-powered transcription**. Recordings are saved locally to `./recordings/` in your project directory.
 
 ### Completed Features:
 - **Continuous Recording**: Clean, uninterrupted audio per user (like Craig.bot)
+- **OpenAI Whisper Transcription**: Convert speech to searchable text with timestamps
+- **Real Discord Usernames**: Filenames and transcripts use actual names/nicknames
+- **Clean Filename Format**: `ServerName_10-02-25_Username.wav`
 - **Pure JavaScript Opus Decoding**: No native dependencies, works on all platforms
 - **Single Decoder Per User**: Maintains Opus codec state for pristine audio quality
 - **Multi-Track Export**: Separate WAV file per speaker
 - **Local Storage**: Files saved to `./recordings/` folder in project
 - **File Management**: Automatic directory creation and cleanup utilities
-- **Enhanced Commands**: `/record-test` with start, stop-save, status, list-files actions
+- **Enhanced Commands**: `/record-test` with start, stop-save, transcribe, view-transcript actions
 
 ## Testing Instructions
 
@@ -40,10 +43,26 @@ Phase 2A delivers **professional-quality continuous audio recording** to WAV fil
 This will:
 - Stop the recording
 - Process each speaker's audio into separate WAV files
-- Save files to `/tmp/recordings/{sessionId}/`
-- Show you the output directory and file statistics
+- Save files to `./recordings/{sessionId}/`
+- **Auto-transcribe** if `RECORDING_AUTO_TRANSCRIBE=true` in `.env`
+- Show you the output directory, file statistics, and transcript info
 
 **Alternative**: Use `/record-test action:stop` to stop without saving (memory only)
+
+### Step 3b: Transcribe (if not auto-transcribed)
+```
+/record-test action:transcribe session-id:{your-session-id}
+```
+- Transcribes all audio files using OpenAI Whisper
+- Saves transcript JSON and Markdown files
+- Shows word count and confidence scores
+
+### Step 3c: View Transcript
+```
+/record-test action:view-transcript session-id:{your-session-id}
+```
+- Displays transcript summary
+- Downloads formatted Markdown file
 
 ### Step 4: Check Status
 ```
@@ -75,9 +94,11 @@ ls -lh recordings/
 
 ls -lh recordings/<session-id>/
 
-# Example files:
-# 2025-10-02T15-30-45_12345678_Username1.wav
-# 2025-10-02T15-30-47_87654321_Username2.wav
+# Example files (new format with real usernames!):
+# MyServer_10-02-25_JohnDoe.wav
+# MyServer_10-02-25_JaneSmith.wav
+# MyServer_10-02-25_transcript.json
+# MyServer_10-02-25_transcript.md
 # manifest.json
 ```
 
@@ -93,11 +114,22 @@ aplay recordings/<session-id>/filename.wav
 # Or just double-click the .wav files in Finder
 ```
 
+### Read Transcript
+```bash
+# View transcript in terminal
+cat recordings/<session-id>/*_transcript.md
+
+# Or open in text editor
+open recordings/<session-id>/*_transcript.md
+```
+
 ## Expected Results
 
 ### On Successful Recording:
-- ✅ One WAV file per speaker
-- ✅ Files named with timestamp, userId, and username
+- ✅ One WAV file per speaker with real Discord username
+- ✅ Files named: `ServerName_MM-dd-YY_Username.wav`
+- ✅ Transcript JSON with full structured data
+- ✅ Transcript Markdown with timestamps and speaker labels
 - ✅ manifest.json with metadata
 - ✅ Files are playable audio
 - ✅ Each track contains only that speaker's voice

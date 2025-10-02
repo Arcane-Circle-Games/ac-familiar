@@ -92,12 +92,14 @@ Phase 2B adds **OpenAI Whisper transcription** to locally-stored audio recording
 ```
 recordings/
 └── {session-id}/
-    ├── 2025-10-02T15-30-45_12345678_User1.wav
-    ├── 2025-10-02T15-30-47_87654321_User2.wav
+    ├── ServerName_10-02-25_JohnDoe.wav
+    ├── ServerName_10-02-25_JaneSmith.wav
     ├── manifest.json
-    ├── {session-id}_transcript.json      ← NEW
-    └── {session-id}_transcript.md        ← NEW
+    ├── ServerName_10-02-25_transcript.json      ← NEW
+    └── ServerName_10-02-25_transcript.md        ← NEW
 ```
+
+**Note:** Filenames use format `ServerName_MM-dd-YY_username` with real Discord usernames (or server nicknames if set).
 
 ### Transcript JSON Format
 ```json
@@ -105,15 +107,15 @@ recordings/
   "sessionId": "uuid",
   "transcribedAt": "2025-10-02T15:35:00.000Z",
   "duration": 120000,
-  "participantCount": 3,
-  "fullTranscript": "# Session Transcript\n\n**[00:00] User1:** Hello...",
+  "participantCount": 2,
+  "fullTranscript": "# Session Transcript\n\n**[00:00] JohnDoe:** Hello...",
   "wordCount": 1542,
   "averageConfidence": 0.95,
   "userTranscripts": [
     {
       "userId": "123456789",
-      "username": "User1",
-      "audioFile": "2025-10-02T15-30-45_12345678_User1.wav",
+      "username": "JohnDoe",
+      "audioFile": "ServerName_10-02-25_JohnDoe.wav",
       "audioStartTime": 1696259445000,
       "text": "Full text for this user...",
       "segments": [
@@ -294,6 +296,8 @@ All criteria met ✅:
 - ✅ Multiple user transcripts merged chronologically
 - ✅ Discord commands work: `transcribe`, `view-transcript`
 - ✅ Auto-transcribe on `stop-save` works
+- ✅ **Real Discord usernames** in transcripts and filenames
+- ✅ **Clean filename format**: `ServerName_MM-dd-YY_username`
 - ✅ Ready for testing with real recordings
 - ✅ No TypeScript errors in new code
 - ✅ Ready to migrate to cloud storage (Phase 2C)
@@ -348,7 +352,7 @@ Before marking Phase 2B as production-ready, test:
 
 ## Implementation Time
 
-**Actual:** ~1.5 hours
+**Actual:** ~2 hours (including filename and username fixes)
 **Estimated:** 2-3 hours
 
 Faster than expected due to:
@@ -356,3 +360,25 @@ Faster than expected due to:
 - Clear plan from `PHASE_2B_PLAN.md`
 - Existing OpenAI package integration
 - No new dependencies needed
+
+## Additional Updates
+
+After initial implementation, added:
+
+1. **Filename Format Update** (`FILENAME_UPDATE.md`)
+   - Changed from ISO timestamps to `ServerName_MM-dd-YY_username` format
+   - Applies to audio files and transcripts
+   - Guild name extraction and sanitization
+
+2. **Real Username Integration** (`USERNAME_FIX.md`)
+   - Fixed placeholder usernames (`User_5024` → `JohnDoe`)
+   - Fetches from Discord using `guild.members.fetch()`
+   - Uses display names (nicknames) when available
+   - Proper bot detection and filtering
+
+3. **Transcript Filename Update** (`TRANSCRIPT_FILENAME_UPDATE.md`)
+   - Transcript files now match audio naming format
+   - Backward compatible with old format
+   - `ServerName_10-02-25_transcript.json|md`
+
+**Total Implementation:** Complete transcription system with clean, user-friendly filenames and real usernames throughout.
