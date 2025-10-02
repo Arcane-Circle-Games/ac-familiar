@@ -11,7 +11,7 @@ import { gmCommand } from '../commands/gm';
 import { recordTestCommand } from '../commands/record-test';
 
 export class ArcaneBot {
-  private client: ArcaneClient;
+  public client: ArcaneClient;
   private rest: REST;
   
   constructor() {

@@ -5,6 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 import { ExportedRecording, multiTrackExporter } from '../processing/MultiTrackExporter';
 import { SessionTranscript } from '../../types/transcription';
+import { recordingUploadService, UploadResult } from '../upload/RecordingUploadService';
+import { RecordingUploadMetadata } from '../../types/recording-api';
+import { config } from '../../utils/config';
 
 interface ActiveSession {
   sessionId: string;
@@ -310,6 +313,65 @@ export class RecordingManager {
    */
   async hasTranscript(sessionId: string, outputDir: string = './recordings'): Promise<boolean> {
     return multiTrackExporter.hasTranscript(sessionId, outputDir);
+  }
+
+  /**
+   * Upload recording to platform API (Phase 2C)
+   */
+  async uploadRecording(
+    exportedRecording: ExportedRecording,
+    voiceChannel: VoiceChannel,
+    requestedBy: GuildMember
+  ): Promise<UploadResult> {
+    try {
+      logger.info(`Uploading recording for session ${exportedRecording.sessionId}`);
+
+      // Build metadata
+      const duration = exportedRecording.sessionEndTime - exportedRecording.sessionStartTime;
+      const metadata: RecordingUploadMetadata = {
+        sessionId: exportedRecording.sessionId,
+        guildId: voiceChannel.guild.id,
+        guildName: voiceChannel.guild.name,
+        channelId: voiceChannel.id,
+        userId: requestedBy.id,
+        duration,
+        recordedAt: new Date(exportedRecording.sessionStartTime).toISOString(),
+        participants: exportedRecording.tracks.map((track) => ({
+          userId: track.metadata.userId,
+          username: track.metadata.username,
+        })),
+      };
+
+      // Upload with retry
+      const result = await recordingUploadService.uploadWithRetry(
+        exportedRecording,
+        metadata,
+        3 // max retries
+      );
+
+      if (result.success) {
+        logger.info(`Upload successful for session ${exportedRecording.sessionId}`, {
+          recordingId: result.recordingId,
+        });
+
+        // Cleanup local files if configured
+        if (!config.RECORDING_KEEP_LOCAL_AFTER_UPLOAD) {
+          await recordingUploadService.cleanupLocalFiles(exportedRecording);
+        }
+      } else {
+        logger.error(`Upload failed for session ${exportedRecording.sessionId}`, {
+          error: result.error,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      logger.error(`Upload error for session ${exportedRecording.sessionId}:`, error as Error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown upload error',
+      };
+    }
   }
 
   /**

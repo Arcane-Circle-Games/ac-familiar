@@ -7,6 +7,11 @@ import {
   CreateTranscriptionRequest,
   ApiResponse
 } from '../../types/api';
+import {
+  RecordingDetailsResponse,
+  RecordingListResponse,
+  RecordingStatus,
+} from '../../types/recording-api';
 import { logInfo, logError } from '../../utils/logger';
 
 export class RecordingService {
@@ -285,9 +290,9 @@ export class RecordingService {
   public async getRecordingTranscription(recordingId: string): Promise<ApiResponse<Transcription>> {
     try {
       logInfo('Fetching recording transcription', { recordingId });
-      
+
       const transcriptions = await this.getTranscriptions({ recordingId, limit: 1 });
-      
+
       if (transcriptions.data && transcriptions.data.length > 0) {
         return {
           success: true,
@@ -302,6 +307,82 @@ export class RecordingService {
     } catch (error) {
       logError('Failed to fetch recording transcription', error as Error, { recordingId });
       throw error;
+    }
+  }
+
+  // === Phase 2C Methods ===
+
+  /**
+   * Get recording details (Phase 2C format)
+   */
+  public async getRecordingDetails(recordingId: string): Promise<RecordingDetailsResponse['recording'] | null> {
+    try {
+      logInfo('Fetching recording details (Phase 2C)', { recordingId });
+
+      const response = await apiClient.get<RecordingDetailsResponse>(`/recordings/${recordingId}`);
+      return response.data?.recording || null;
+    } catch (error) {
+      logError('Failed to fetch recording details', error as Error, { recordingId });
+      return null;
+    }
+  }
+
+  /**
+   * Check recording processing status
+   */
+  public async checkRecordingStatus(recordingId: string): Promise<RecordingStatus | null> {
+    const recording = await this.getRecordingDetails(recordingId);
+    return recording ? recording.status : null;
+  }
+
+  /**
+   * List recordings with Phase 2C filters
+   */
+  public async listRecordingsPhase2C(filters?: {
+    guildId?: string;
+    userId?: string;
+    campaignId?: string;
+    status?: RecordingStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<RecordingListResponse | null> {
+    try {
+      logInfo('Listing recordings (Phase 2C)', filters);
+
+      const params = new URLSearchParams();
+      if (filters?.guildId) params.append('guildId', filters.guildId);
+      if (filters?.userId) params.append('userId', filters.userId);
+      if (filters?.campaignId) params.append('campaignId', filters.campaignId);
+      if (filters?.status) params.append('status', filters.status);
+      if (filters?.limit) params.append('limit', filters.limit.toString());
+      if (filters?.offset) params.append('offset', filters.offset.toString());
+
+      const response = await apiClient.get<RecordingListResponse>(
+        `/recordings?${params.toString()}`
+      );
+
+      return response.data || null;
+    } catch (error) {
+      logError('Failed to list recordings', error as Error, filters);
+      return null;
+    }
+  }
+
+  /**
+   * Retry transcription for a recording
+   */
+  public async retryTranscription(recordingId: string, discordUserId: string): Promise<boolean> {
+    try {
+      logInfo('Retrying transcription', { recordingId, discordUserId });
+
+      await apiClient.authenticateWithDiscord(discordUserId);
+      await apiClient.post(`/recordings/${recordingId}/retranscribe`, {});
+
+      logInfo('Transcription retry queued', { recordingId });
+      return true;
+    } catch (error) {
+      logError('Failed to retry transcription', error as Error, { recordingId, discordUserId });
+      return false;
     }
   }
 }

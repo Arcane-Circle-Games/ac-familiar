@@ -3,20 +3,14 @@ import * as fs from 'fs';
 import { apiClient } from '../api/client';
 import { logger } from '../../utils/logger';
 import { ExportedRecording } from '../processing/MultiTrackExporter';
+import {
+  RecordingUploadMetadata,
+  RecordingUploadResponse,
+  RecordingDetailsResponse,
+} from '../../types/recording-api';
 
-export interface UploadMetadata {
-  sessionId: string;
-  guildId: string;
-  guildName: string;
-  channelId: string;
-  userId: string;
-  duration: number;
-  recordedAt: string;
-  participants: Array<{
-    userId: string;
-    username: string;
-  }>;
-}
+// Re-export for backward compatibility
+export type UploadMetadata = RecordingUploadMetadata;
 
 export interface UploadResult {
   success: boolean;
@@ -29,18 +23,29 @@ export interface UploadResult {
   error?: string;
 }
 
+interface UploadProgress {
+  uploadedBytes: number;
+  totalBytes: number;
+  percentage: number;
+  currentFile: string;
+  currentFileIndex: number;
+  totalFiles: number;
+}
+
+export type UploadProgressCallback = (progress: UploadProgress) => void;
+
 export class RecordingUploadService {
   /**
    * Upload recording to platform API
    */
   async uploadRecording(
     exportedRecording: ExportedRecording,
-    metadata: UploadMetadata
+    metadata: RecordingUploadMetadata,
+    onProgress?: UploadProgressCallback
   ): Promise<UploadResult> {
     try {
       logger.info(`Starting upload for session ${metadata.sessionId}`, {
         trackCount: exportedRecording.tracks.length,
-        totalSize: exportedRecording.totalSize
       });
 
       // Create form data
@@ -49,68 +54,91 @@ export class RecordingUploadService {
       // Add metadata as JSON
       form.append('metadata', JSON.stringify(metadata));
 
-      // Add audio files
+      // Calculate total size for progress tracking
+      let totalBytes = 0;
+      const fileSizes: number[] = [];
+
       for (const track of exportedRecording.tracks) {
+        const stats = await fs.promises.stat(track.filePath);
+        fileSizes.push(stats.size);
+        totalBytes += stats.size;
+      }
+
+      // Add audio files
+      let uploadedBytes = 0;
+      for (let i = 0; i < exportedRecording.tracks.length; i++) {
+        const track = exportedRecording.tracks[i];
         const fileStream = fs.createReadStream(track.filePath);
         const filename = track.filePath.split('/').pop() || 'audio.wav';
 
         form.append('files', fileStream, {
           filename,
-          contentType: 'audio/wav'
+          contentType: 'audio/wav',
         });
 
         logger.debug(`Added file to upload: ${filename}`, {
-          size: track.fileSize,
-          format: track.format
+          size: fileSizes[i],
         });
+
+        uploadedBytes += fileSizes[i];
+
+        if (onProgress) {
+          onProgress({
+            uploadedBytes,
+            totalBytes,
+            percentage: Math.round((uploadedBytes / totalBytes) * 100),
+            currentFile: filename,
+            currentFileIndex: i,
+            totalFiles: exportedRecording.tracks.length,
+          });
+        }
       }
 
       // Upload to API
       const startTime = Date.now();
-      const response = await apiClient.post('/recordings', form, {
+      const response = await apiClient.post<RecordingUploadResponse>('/recordings', form, {
         headers: {
-          ...form.getHeaders()
+          ...form.getHeaders(),
         },
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
-        timeout: 300000 // 5 minutes
+        timeout: 300000, // 5 minutes
       });
 
       const uploadDuration = Date.now() - startTime;
 
       logger.info(`Upload completed in ${uploadDuration}ms`, {
         sessionId: metadata.sessionId,
-        recordingId: response.data.recording.id
+        recordingId: response.data.recording.id,
       });
 
       return {
         success: true,
-        recordingId: response.data.recording.id,
-        downloadUrls: response.data.recording.downloadUrls,
-        viewUrl: response.data.recording.viewUrl,
-        estimatedProcessingTime: response.data.recording.estimatedProcessingTime
+        recordingId: response.data?.recording?.id,
+        downloadUrls: response.data?.recording?.downloadUrls,
+        viewUrl: response.data?.recording?.viewUrl,
+        estimatedProcessingTime: response.data?.recording?.estimatedProcessingTime,
       };
-
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Upload failed for session ${metadata.sessionId}`, error as Error);
 
       if (error.response) {
         // API returned an error
         return {
           success: false,
-          error: error.response.data?.error || `API error: ${error.response.status}`
+          error: error.response.data?.error || `API error: ${error.response.status}`,
         };
       } else if (error.request) {
         // Request made but no response
         return {
           success: false,
-          error: 'No response from API - network issue or API is down'
+          error: 'No response from API - network issue or API is down',
         };
       } else {
         // Something else went wrong
         return {
           success: false,
-          error: error.message || 'Unknown error during upload'
+          error: error.message || 'Unknown error during upload',
         };
       }
     }
@@ -121,21 +149,31 @@ export class RecordingUploadService {
    */
   async uploadWithRetry(
     exportedRecording: ExportedRecording,
-    metadata: UploadMetadata,
-    maxRetries: number = 3
+    metadata: RecordingUploadMetadata,
+    maxRetries: number = 3,
+    onProgress?: UploadProgressCallback
   ): Promise<UploadResult> {
     let lastError: UploadResult | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       logger.info(`Upload attempt ${attempt}/${maxRetries} for session ${metadata.sessionId}`);
 
-      const result = await this.uploadRecording(exportedRecording, metadata);
+      const result = await this.uploadRecording(exportedRecording, metadata, onProgress);
 
       if (result.success) {
         return result;
       }
 
       lastError = result;
+
+      // Don't retry on 4xx errors (client errors like validation failures)
+      if (result.error && result.error.includes('4')) {
+        logger.error('Upload failed with client error, not retrying', {
+          sessionId: metadata.sessionId,
+          error: result.error,
+        });
+        return lastError;
+      }
 
       if (attempt < maxRetries) {
         // Exponential backoff
@@ -155,7 +193,7 @@ export class RecordingUploadService {
   async cleanupLocalFiles(exportedRecording: ExportedRecording): Promise<void> {
     try {
       logger.info(`Cleaning up local files for session ${exportedRecording.sessionId}`, {
-        directory: exportedRecording.outputDirectory
+        directory: exportedRecording.outputDirectory,
       });
 
       // Delete the entire session directory
@@ -164,7 +202,7 @@ export class RecordingUploadService {
       logger.info(`Local files cleaned up successfully`);
     } catch (error) {
       logger.error(`Failed to cleanup local files`, error as Error, {
-        directory: exportedRecording.outputDirectory
+        directory: exportedRecording.outputDirectory,
       });
       // Don't throw - cleanup failure shouldn't break the flow
     }
@@ -174,7 +212,7 @@ export class RecordingUploadService {
    * Check recording status on API
    */
   async checkStatus(recordingId: string): Promise<{
-    status: 'processing' | 'completed' | 'failed';
+    status: 'uploading' | 'processing' | 'completed' | 'failed';
     transcript?: {
       wordCount: number;
       confidence: number;
@@ -182,17 +220,47 @@ export class RecordingUploadService {
     error?: string;
   } | null> {
     try {
-      const response = await apiClient.get(`/recordings/${recordingId}`);
+      const response = await apiClient.get<RecordingDetailsResponse>(`/recordings/${recordingId}`);
 
       return {
-        status: response.data.recording.status,
-        transcript: response.data.recording.transcript,
-        error: response.data.recording.errorMessage
+        status: response.data?.recording?.status || 'failed',
+        transcript: response.data?.recording?.transcript
+          ? {
+              wordCount: response.data.recording.transcript.wordCount,
+              confidence: response.data.recording.transcript.confidence,
+            }
+          : undefined,
+        error: undefined,
       };
     } catch (error) {
       logger.error(`Failed to check status for recording ${recordingId}`, error as Error);
       return null;
     }
+  }
+
+  /**
+   * Estimate upload time based on file sizes
+   */
+  async estimateUploadTime(exportedRecording: ExportedRecording): Promise<{
+    totalSizeMB: number;
+    estimatedSeconds: number;
+  }> {
+    let totalBytes = 0;
+
+    for (const track of exportedRecording.tracks) {
+      const stats = await fs.promises.stat(track.filePath);
+      totalBytes += stats.size;
+    }
+
+    const totalSizeMB = totalBytes / (1024 * 1024);
+
+    // Assume 1MB/s upload speed (conservative estimate)
+    const estimatedSeconds = Math.ceil(totalSizeMB / 1);
+
+    return {
+      totalSizeMB: Math.round(totalSizeMB * 100) / 100,
+      estimatedSeconds,
+    };
   }
 
   /**

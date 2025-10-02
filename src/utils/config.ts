@@ -31,6 +31,8 @@ const configSchema = z.object({
   RECORDING_MAX_DURATION_MINUTES: z.coerce.number().min(1).max(300).default(120),
   RECORDING_AUDIO_QUALITY: z.enum(['low', 'medium', 'high']).default('high'),
   RECORDING_AUTO_TRANSCRIBE: z.coerce.boolean().default(true),
+  RECORDING_AUTO_UPLOAD: z.coerce.boolean().default(false),
+  RECORDING_KEEP_LOCAL_AFTER_UPLOAD: z.coerce.boolean().default(false),
   
   // Session Management
   SESSION_TIMEOUT_MINUTES: z.coerce.number().min(5).max(120).default(30),
@@ -41,9 +43,11 @@ const configSchema = z.object({
   QUEUE_REDIS_PORT: z.coerce.number().default(6379),
   QUEUE_REDIS_PASSWORD: z.string().optional(),
   
-  // Webhook Configuration
+  // Webhook Configuration (Phase 2C)
   WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
-  WEBHOOK_SECRET: z.string().optional().or(z.literal(''))
+  WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  WEBHOOK_LISTENER_PORT: z.coerce.number().min(1).max(65535).default(3001),
+  WEBHOOK_LISTENER_ENABLED: z.coerce.boolean().default(false)
 });
 
 const parseConfig = () => {
