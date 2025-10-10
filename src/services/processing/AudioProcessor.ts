@@ -17,6 +17,7 @@ export interface AudioTrackMetadata {
   duration: number;
   sampleRate: number;
   channels: number;
+  segmentIndex?: number; // Optional segment index for segment-based recordings
 }
 
 export interface ProcessedAudioTrack {
@@ -80,19 +81,31 @@ export class AudioProcessor {
       const duration = metadata.endTime - metadata.startTime;
       const sanitizedUsername = this.sanitizeFilename(metadata.username);
 
-      // Generate filename in format: [ServerName_MM-dd-YY_username]
-      const date = new Date(options.sessionStartTime || metadata.startTime);
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const year = String(date.getFullYear()).slice(-2);
-      const dateStr = `${month}-${day}-${year}`;
+      let outputPath: string;
 
-      const sanitizedGuildName = options.guildName
-        ? this.sanitizeFilename(options.guildName)
-        : 'Discord';
+      // Check if this is a segment-based recording
+      if (metadata.segmentIndex !== undefined) {
+        // Segment-based: Create user subdirectory and use segment naming
+        const userDir = path.join(outputDir, sanitizedUsername);
+        await fs.mkdir(userDir, { recursive: true });
 
-      const outputFilename = `${sanitizedGuildName}_${dateStr}_${sanitizedUsername}.${format}`;
-      const outputPath = path.join(outputDir, outputFilename);
+        const segmentFilename = `segment_${metadata.segmentIndex.toString().padStart(3, '0')}.${format}`;
+        outputPath = path.join(userDir, segmentFilename);
+      } else {
+        // Legacy: Generate filename in format: [ServerName_MM-dd-YY_username]
+        const date = new Date(options.sessionStartTime || metadata.startTime);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        const dateStr = `${month}-${day}-${year}`;
+
+        const sanitizedGuildName = options.guildName
+          ? this.sanitizeFilename(options.guildName)
+          : 'Discord';
+
+        const outputFilename = `${sanitizedGuildName}_${dateStr}_${sanitizedUsername}.${format}`;
+        outputPath = path.join(outputDir, outputFilename);
+      }
 
       logger.info('Processing audio track', {
         userId: metadata.userId,
@@ -103,8 +116,11 @@ export class AudioProcessor {
         outputPath
       });
 
-      // Write PCM data to temporary file
-      const tempPCMPath = path.join(outputDir, `temp_${Date.now()}.pcm`);
+      // Write PCM data to temporary file with unique name
+      // Use userId, segmentIndex (if available), timestamp, and random value for uniqueness
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const segmentSuffix = metadata.segmentIndex !== undefined ? `_seg${metadata.segmentIndex}` : '';
+      const tempPCMPath = path.join(outputDir, `temp_${metadata.userId}${segmentSuffix}_${Date.now()}_${randomSuffix}.pcm`);
       await fs.writeFile(tempPCMPath, combinedBuffer);
 
       logger.debug('Wrote PCM temp file', { tempPCMPath, size: combinedBuffer.length });
@@ -235,7 +251,7 @@ export class AudioProcessor {
   }
 
   /**
-   * Process multiple user tracks in parallel
+   * Process multiple user tracks/segments in parallel
    */
   async processMultipleTracks(
     userTracks: Array<{
@@ -244,6 +260,7 @@ export class AudioProcessor {
       startTime: number;
       endTime: number;
       bufferChunks: Buffer[];
+      segmentIndex?: number; // Optional for segment-based recordings
     }>,
     options: AudioProcessingOptions = {}
   ): Promise<ProcessedAudioTrack[]> {
@@ -252,20 +269,23 @@ export class AudioProcessor {
       format: options.format || 'wav'
     });
 
-    const processingPromises = userTracks.map(track =>
-      this.convertPCMToWAV(
-        track.bufferChunks,
-        {
-          userId: track.userId,
-          username: track.username,
-          startTime: track.startTime,
-          endTime: track.endTime,
-          sampleRate: this.DEFAULT_SAMPLE_RATE,
-          channels: this.DEFAULT_CHANNELS
-        },
-        options
-      )
-    );
+    const processingPromises = userTracks.map(track => {
+      const metadata: Omit<AudioTrackMetadata, 'duration'> = {
+        userId: track.userId,
+        username: track.username,
+        startTime: track.startTime,
+        endTime: track.endTime,
+        sampleRate: this.DEFAULT_SAMPLE_RATE,
+        channels: this.DEFAULT_CHANNELS
+      };
+
+      // Only add segmentIndex if present
+      if (track.segmentIndex !== undefined) {
+        metadata.segmentIndex = track.segmentIndex;
+      }
+
+      return this.convertPCMToWAV(track.bufferChunks, metadata, options);
+    });
 
     try {
       const results = await Promise.all(processingPromises);

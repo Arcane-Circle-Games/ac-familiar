@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm install:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(npm run build:*)",
+      "Bash(TRANSCRIPTION_ENGINE=local tsx test-local-whisper.ts)",
+      "Bash(npx tsx:*)",
+      "Bash(npm search:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm view:*)",
+      "Bash(where vulkaninfo)",
+      "Bash(vulkaninfo:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

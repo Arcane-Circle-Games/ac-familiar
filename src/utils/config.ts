@@ -26,13 +26,25 @@ const configSchema = z.object({
   
   // OpenAI Configuration
   OPENAI_API_KEY: z.string().optional(),
-  
+
+  // Transcription Configuration
+  TRANSCRIPTION_ENGINE: z.enum(['openai', 'local', 'deepgram']).default('openai'),
+  WHISPER_MODEL_SIZE: z.enum(['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 'medium', 'medium.en', 'large-v1', 'large-v2', 'large-v3', 'large-v3-turbo']).default('base'),
+  WHISPER_MODELS_PATH: z.string().default('./models'),
+  WHISPER_USE_GPU: z.coerce.boolean().default(true),
+  WHISPER_LIB_VARIANT: z.enum(['default', 'vulkan', 'cuda']).default('default'),
+
   // Recording Configuration
   RECORDING_MAX_DURATION_MINUTES: z.coerce.number().min(1).max(300).default(120),
   RECORDING_AUDIO_QUALITY: z.enum(['low', 'medium', 'high']).default('high'),
   RECORDING_AUTO_TRANSCRIBE: z.coerce.boolean().default(true),
   RECORDING_AUTO_UPLOAD: z.coerce.boolean().default(false),
   RECORDING_KEEP_LOCAL_AFTER_UPLOAD: z.coerce.boolean().default(false),
+
+  // Segment-Based Recording Configuration
+  RECORDING_SILENCE_THRESHOLD: z.coerce.number().min(500).max(10000).default(2000), // ms
+  RECORDING_MIN_SEGMENT_DURATION: z.coerce.number().min(100).max(5000).default(500), // ms
+  RECORDING_SEGMENT_PARALLEL_LIMIT: z.coerce.number().min(1).max(20).default(5),
   
   // Session Management
   SESSION_TIMEOUT_MINUTES: z.coerce.number().min(5).max(120).default(30),

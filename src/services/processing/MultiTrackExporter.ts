@@ -125,26 +125,58 @@ export class MultiTrackExporter {
   ): Promise<void> {
     const manifestPath = path.join(outputDir, 'manifest.json');
 
-    const manifest = {
-      sessionId: recording.sessionId,
-      recordedAt: new Date(recording.sessionStartTime).toISOString(),
-      duration: recording.sessionEndTime - recording.sessionStartTime,
-      participantCount: recording.participantCount,
-      totalSize: recording.totalSize,
-      tracks: recording.tracks.map(track => ({
-        userId: track.metadata.userId,
-        username: track.metadata.username,
-        filename: path.basename(track.filePath),
-        fileSize: track.fileSize,
-        format: track.format,
-        duration: track.metadata.duration,
-        startTime: new Date(track.metadata.startTime).toISOString(),
-        endTime: new Date(track.metadata.endTime).toISOString()
-      }))
-    };
+    // Check if this is a segment-based recording
+    const hasSegments = recording.tracks.some(track => track.metadata.segmentIndex !== undefined);
+
+    let manifest: any;
+
+    if (hasSegments) {
+      // Segment-based manifest format
+      manifest = {
+        sessionId: recording.sessionId,
+        recordedAt: new Date(recording.sessionStartTime).toISOString(),
+        sessionStartTime: recording.sessionStartTime,
+        sessionEndTime: recording.sessionEndTime,
+        duration: recording.sessionEndTime - recording.sessionStartTime,
+        participantCount: recording.participantCount,
+        totalSize: recording.totalSize,
+        format: 'segmented',
+        segments: recording.tracks.map(track => ({
+          userId: track.metadata.userId,
+          username: track.metadata.username,
+          segmentIndex: track.metadata.segmentIndex,
+          fileName: path.relative(outputDir, track.filePath).replace(/\\/g, '/'), // Relative path with forward slashes
+          absoluteStartTime: track.metadata.startTime,
+          absoluteEndTime: track.metadata.endTime,
+          duration: track.metadata.duration,
+          fileSize: track.fileSize,
+          format: track.format
+        }))
+      };
+    } else {
+      // Legacy format (one file per user)
+      manifest = {
+        sessionId: recording.sessionId,
+        recordedAt: new Date(recording.sessionStartTime).toISOString(),
+        duration: recording.sessionEndTime - recording.sessionStartTime,
+        participantCount: recording.participantCount,
+        totalSize: recording.totalSize,
+        format: 'legacy',
+        tracks: recording.tracks.map(track => ({
+          userId: track.metadata.userId,
+          username: track.metadata.username,
+          filename: path.basename(track.filePath),
+          fileSize: track.fileSize,
+          format: track.format,
+          duration: track.metadata.duration,
+          startTime: new Date(track.metadata.startTime).toISOString(),
+          endTime: new Date(track.metadata.endTime).toISOString()
+        }))
+      };
+    }
 
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
-    logger.debug('Created manifest file', { manifestPath });
+    logger.debug('Created manifest file', { manifestPath, format: hasSegments ? 'segmented' : 'legacy' });
   }
 
   /**
@@ -251,14 +283,21 @@ export class MultiTrackExporter {
       const manifestContent = await fs.readFile(manifestPath, 'utf-8');
       const manifest = JSON.parse(manifestContent);
 
+      const isSegmented = manifest.format === 'segmented' && manifest.segments;
+
       logger.debug('Loaded manifest', {
         sessionId,
-        trackCount: manifest.tracks.length
+        format: manifest.format,
+        itemCount: isSegmented ? manifest.segments.length : manifest.tracks.length
       });
 
-      // Extract guild name from audio filename (format: ServerName_MM-dd-YY_username.wav)
+      // Extract guild name from audio filename
       let guildName: string | undefined;
-      if (manifest.tracks.length > 0 && manifest.tracks[0].filename) {
+      if (isSegmented && manifest.segments.length > 0) {
+        // For segmented: segments don't include guild name in path, use default
+        guildName = 'Discord';
+      } else if (manifest.tracks && manifest.tracks.length > 0 && manifest.tracks[0].filename) {
+        // For legacy: extract from filename (format: ServerName_MM-dd-YY_username.wav)
         const firstFilename = manifest.tracks[0].filename;
         const parts = firstFilename.split('_');
         if (parts.length >= 3) {
@@ -266,17 +305,37 @@ export class MultiTrackExporter {
         }
       }
 
-      const sessionStartTime = manifest.recordedAt
-        ? new Date(manifest.recordedAt).getTime()
-        : manifest.startTime;
+      const sessionStartTime = manifest.sessionStartTime ||
+        (manifest.recordedAt ? new Date(manifest.recordedAt).getTime() : Date.now());
 
-      // Prepare files for transcription
-      const filesToTranscribe = manifest.tracks.map((track: any) => ({
-        wavPath: path.join(sessionDir, track.filename),
-        userId: track.userId,
-        username: track.username,
-        audioStartTime: new Date(track.startTime).getTime()
-      }));
+      let filesToTranscribe: Array<{
+        wavPath: string;
+        userId: string;
+        username: string;
+        audioStartTime: number;
+      }>;
+
+      if (isSegmented) {
+        // Segment-based transcription: each segment file is transcribed with its absolute start time
+        filesToTranscribe = manifest.segments.map((segment: any) => ({
+          wavPath: path.join(sessionDir, segment.fileName),
+          userId: segment.userId,
+          username: segment.username,
+          audioStartTime: segment.absoluteStartTime // Use segment's absolute timestamp
+        }));
+
+        logger.info(`Processing segment-based recording with ${filesToTranscribe.length} segments`);
+      } else {
+        // Legacy format: one file per user
+        filesToTranscribe = manifest.tracks.map((track: any) => ({
+          wavPath: path.join(sessionDir, track.filename),
+          userId: track.userId,
+          username: track.username,
+          audioStartTime: new Date(track.startTime).getTime()
+        }));
+
+        logger.info(`Processing legacy recording with ${filesToTranscribe.length} tracks`);
+      }
 
       // Transcribe all audio files
       const userTranscripts: UserTranscript[] = await transcriptionService.transcribeMultipleFiles(
@@ -290,6 +349,8 @@ export class MultiTrackExporter {
       logger.info(`Generated ${userTranscripts.length} user transcripts`);
 
       // Merge transcripts chronologically
+      // For segmented recordings, each segment gets its own UserTranscript with absolute timestamps
+      // The merge function will sort all segments chronologically
       const fullTranscript = transcriptionStorage.mergeUserTranscripts(
         userTranscripts,
         sessionStartTime
@@ -320,7 +381,8 @@ export class MultiTrackExporter {
       logger.info(`Transcription completed for session ${sessionId}`, {
         wordCount,
         participants: manifest.participantCount,
-        avgConfidence: avgConfidence.toFixed(2)
+        avgConfidence: avgConfidence.toFixed(2),
+        format: isSegmented ? 'segmented' : 'legacy'
       });
 
       return sessionTranscript;

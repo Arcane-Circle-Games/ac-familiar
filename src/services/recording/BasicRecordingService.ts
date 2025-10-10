@@ -5,13 +5,27 @@ import { Guild } from 'discord.js';
 import { logger } from '../../utils/logger';
 import { multiTrackExporter, ExportedRecording } from '../processing/MultiTrackExporter';
 import { AudioProcessingOptions } from '../processing/AudioProcessor';
+import { config } from '../../utils/config';
+
+interface AudioSegment {
+  userId: string;
+  username: string;
+  segmentIndex: number;
+  bufferChunks: Buffer[];
+  absoluteStartTime: number; // Unix timestamp (ms)
+  absoluteEndTime?: number;  // Unix timestamp (ms)
+  duration?: number;         // Duration in ms
+}
 
 interface UserRecording {
   userId: string;
   username: string;
   startTime: number;
   endTime?: number;
-  bufferChunks: Buffer[];
+  currentSegment: AudioSegment | null;
+  completedSegments: AudioSegment[];
+  lastChunkTime: number; // Timestamp relative to session start (ms)
+  segmentCount: number;
   decoder: OpusDecoderStream;
   opusStream?: any; // AudioReceiveStream from Discord
   pcmStream?: any; // Decoded PCM stream
@@ -125,6 +139,29 @@ export class BasicRecordingService {
     for (const [userId, userRecording] of session.userRecordings.entries()) {
       userRecording.endTime = Date.now();
 
+      // Finalize any current segment that's still being recorded
+      if (userRecording.currentSegment !== null) {
+        const currentSegment = userRecording.currentSegment;
+        currentSegment.absoluteEndTime = Date.now();
+        currentSegment.duration = currentSegment.absoluteEndTime - currentSegment.absoluteStartTime;
+
+        // Only keep segments that meet minimum duration requirement
+        if (currentSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
+          userRecording.completedSegments.push(currentSegment);
+          logger.debug(
+            `Finalized final segment ${currentSegment.segmentIndex} for user ${userId}: ` +
+            `duration=${currentSegment.duration}ms, chunks=${currentSegment.bufferChunks.length}`
+          );
+        } else {
+          logger.debug(
+            `Discarded final segment ${currentSegment.segmentIndex} for user ${userId}: ` +
+            `too short (${currentSegment.duration}ms < ${config.RECORDING_MIN_SEGMENT_DURATION}ms)`
+          );
+        }
+
+        userRecording.currentSegment = null;
+      }
+
       // Destroy streams to trigger final data flush
       if (userRecording.opusStream) {
         userRecording.opusStream.destroy();
@@ -134,9 +171,13 @@ export class BasicRecordingService {
       }
 
       const duration = userRecording.endTime - userRecording.startTime;
-      const audioSize = userRecording.bufferChunks.reduce((total, chunk) => total + chunk.length, 0);
+      const totalSegments = userRecording.completedSegments.length;
+      const audioSize = userRecording.completedSegments.reduce(
+        (total, segment) => total + segment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0),
+        0
+      );
 
-      logger.debug(`User ${userId} recording finalized. Duration: ${duration}ms, Size: ${audioSize} bytes, Chunks: ${userRecording.bufferChunks.length}`);
+      logger.debug(`User ${userId} recording finalized. Duration: ${duration}ms, Segments: ${totalSegments}, Total Size: ${audioSize} bytes`);
     }
 
     // Update participant count
@@ -220,7 +261,10 @@ export class BasicRecordingService {
         userId,
         username: await this.getUsername(userId, session.guild),
         startTime: Date.now(),
-        bufferChunks: [],
+        currentSegment: null,
+        completedSegments: [],
+        lastChunkTime: 0,
+        segmentCount: 0,
         decoder: new OpusDecoderStream()
       };
 
@@ -238,9 +282,60 @@ export class BasicRecordingService {
       userRecording.opusStream = opusStream;
       userRecording.pcmStream = pcmStream;
 
-      // Collect ALL PCM audio data continuously
+      // Collect PCM audio data with segment detection
       pcmStream.on('data', (chunk: Buffer) => {
-        userRecording.bufferChunks.push(chunk);
+        const currentTime = Date.now() - session.startTime; // ms since session start
+        const silenceThreshold = config.RECORDING_SILENCE_THRESHOLD;
+
+        if (userRecording.currentSegment === null) {
+          // Start new segment (first speech or after silence)
+          userRecording.currentSegment = {
+            userId,
+            username: userRecording.username,
+            segmentIndex: userRecording.segmentCount,
+            bufferChunks: [chunk],
+            absoluteStartTime: Date.now()
+          };
+          userRecording.segmentCount++;
+
+          logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
+        } else if (currentTime - userRecording.lastChunkTime > silenceThreshold) {
+          // Gap detected - finalize current segment and start new one
+          const prevSegment = userRecording.currentSegment;
+          prevSegment.absoluteEndTime = session.startTime + userRecording.lastChunkTime;
+          prevSegment.duration = prevSegment.absoluteEndTime - prevSegment.absoluteStartTime;
+
+          // Only keep segments that meet minimum duration requirement
+          if (prevSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
+            userRecording.completedSegments.push(prevSegment);
+            logger.debug(
+              `Finalized segment ${prevSegment.segmentIndex} for user ${userId}: ` +
+              `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}`
+            );
+          } else {
+            logger.debug(
+              `Discarded segment ${prevSegment.segmentIndex} for user ${userId}: ` +
+              `too short (${prevSegment.duration}ms < ${config.RECORDING_MIN_SEGMENT_DURATION}ms)`
+            );
+          }
+
+          // Start new segment
+          userRecording.currentSegment = {
+            userId,
+            username: userRecording.username,
+            segmentIndex: userRecording.segmentCount,
+            bufferChunks: [chunk],
+            absoluteStartTime: Date.now()
+          };
+          userRecording.segmentCount++;
+
+          logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
+        } else {
+          // Continue current segment
+          userRecording.currentSegment.bufferChunks.push(chunk);
+        }
+
+        userRecording.lastChunkTime = currentTime;
       });
 
       pcmStream.on('error', (error) => {
@@ -296,9 +391,18 @@ export class BasicRecordingService {
 
     let totalSize = 0;
 
-    // Count all user recordings
+    // Count all user recordings (completed segments + current segment)
     for (const userRecording of session.userRecordings.values()) {
-      totalSize += userRecording.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      // Add size from completed segments
+      totalSize += userRecording.completedSegments.reduce(
+        (sum, segment) => sum + segment.bufferChunks.reduce((chunkSum, chunk) => chunkSum + chunk.length, 0),
+        0
+      );
+
+      // Add size from current segment if exists
+      if (userRecording.currentSegment !== null) {
+        totalSize += userRecording.currentSegment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      }
     }
 
     return totalSize;
@@ -351,24 +455,40 @@ export class BasicRecordingService {
       participantCount: session.participantCount
     });
 
-    // Convert user recordings to array format for export
-    const userTracks = Array.from(session.userRecordings.values())
-      .filter(rec => rec.endTime !== undefined && rec.bufferChunks.length > 0)
-      .map(rec => ({
-        userId: rec.userId,
-        username: rec.username,
-        startTime: rec.startTime,
-        endTime: rec.endTime!,
-        bufferChunks: rec.bufferChunks
-      }));
+    // Convert user recordings with segments to array format for export
+    const segments: Array<{
+      userId: string;
+      username: string;
+      segmentIndex: number;
+      startTime: number;
+      endTime: number;
+      bufferChunks: Buffer[];
+    }> = [];
 
-    if (userTracks.length === 0) {
-      throw new Error('No user recordings to export');
+    for (const userRecording of session.userRecordings.values()) {
+      if (userRecording.endTime !== undefined) {
+        for (const segment of userRecording.completedSegments) {
+          if (segment.absoluteEndTime !== undefined) {
+            segments.push({
+              userId: segment.userId,
+              username: segment.username,
+              segmentIndex: segment.segmentIndex,
+              startTime: segment.absoluteStartTime,
+              endTime: segment.absoluteEndTime,
+              bufferChunks: segment.bufferChunks
+            });
+          }
+        }
+      }
     }
 
-    // Export all user tracks to audio files
+    if (segments.length === 0) {
+      throw new Error('No segments to export');
+    }
+
+    // Export all segments to audio files
     const exportedRecording = await multiTrackExporter.exportMultiTrack(
-      userTracks,
+      segments,
       {
         sessionId: session.sessionId,
         sessionStartTime: session.startTime,
@@ -380,7 +500,7 @@ export class BasicRecordingService {
 
     logger.info('Session exported successfully', {
       sessionId,
-      trackCount: exportedRecording.tracks.length,
+      segmentCount: exportedRecording.tracks.length,
       totalSize: exportedRecording.totalSize,
       outputDirectory: exportedRecording.outputDirectory
     });
@@ -408,6 +528,29 @@ export class BasicRecordingService {
     for (const [userId, userRecording] of session.userRecordings.entries()) {
       userRecording.endTime = Date.now();
 
+      // Finalize any current segment that's still being recorded
+      if (userRecording.currentSegment !== null) {
+        const currentSegment = userRecording.currentSegment;
+        currentSegment.absoluteEndTime = Date.now();
+        currentSegment.duration = currentSegment.absoluteEndTime - currentSegment.absoluteStartTime;
+
+        // Only keep segments that meet minimum duration requirement
+        if (currentSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
+          userRecording.completedSegments.push(currentSegment);
+          logger.debug(
+            `Finalized final segment ${currentSegment.segmentIndex} for user ${userId}: ` +
+            `duration=${currentSegment.duration}ms, chunks=${currentSegment.bufferChunks.length}`
+          );
+        } else {
+          logger.debug(
+            `Discarded final segment ${currentSegment.segmentIndex} for user ${userId}: ` +
+            `too short (${currentSegment.duration}ms < ${config.RECORDING_MIN_SEGMENT_DURATION}ms)`
+          );
+        }
+
+        userRecording.currentSegment = null;
+      }
+
       // Destroy streams to trigger final data flush
       if (userRecording.opusStream) {
         userRecording.opusStream.destroy();
@@ -417,9 +560,13 @@ export class BasicRecordingService {
       }
 
       const duration = userRecording.endTime - userRecording.startTime;
-      const audioSize = userRecording.bufferChunks.reduce((total, chunk) => total + chunk.length, 0);
+      const totalSegments = userRecording.completedSegments.length;
+      const audioSize = userRecording.completedSegments.reduce(
+        (total, segment) => total + segment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0),
+        0
+      );
 
-      logger.debug(`User ${userId} recording finalized. Duration: ${duration}ms, Size: ${audioSize} bytes, Chunks: ${userRecording.bufferChunks.length}`);
+      logger.debug(`User ${userId} recording finalized. Duration: ${duration}ms, Segments: ${totalSegments}, Total Size: ${audioSize} bytes`);
     }
 
     // Update participant count
@@ -428,24 +575,40 @@ export class BasicRecordingService {
     const duration = session.endTime - session.startTime;
     logger.info(`Recording session ${sessionId} stopped. Duration: ${duration}ms, Users: ${session.participantCount}`);
 
-    // Convert user recordings to array format for export
-    const userTracks = Array.from(session.userRecordings.values())
-      .filter(rec => rec.endTime !== undefined && rec.bufferChunks.length > 0)
-      .map(rec => ({
-        userId: rec.userId,
-        username: rec.username,
-        startTime: rec.startTime,
-        endTime: rec.endTime!,
-        bufferChunks: rec.bufferChunks
-      }));
+    // Convert user recordings with segments to array format for export
+    const segments: Array<{
+      userId: string;
+      username: string;
+      segmentIndex: number;
+      startTime: number;
+      endTime: number;
+      bufferChunks: Buffer[];
+    }> = [];
 
-    if (userTracks.length === 0) {
-      throw new Error('No user recordings to export');
+    for (const userRecording of session.userRecordings.values()) {
+      if (userRecording.endTime !== undefined) {
+        for (const segment of userRecording.completedSegments) {
+          if (segment.absoluteEndTime !== undefined) {
+            segments.push({
+              userId: segment.userId,
+              username: segment.username,
+              segmentIndex: segment.segmentIndex,
+              startTime: segment.absoluteStartTime,
+              endTime: segment.absoluteEndTime,
+              bufferChunks: segment.bufferChunks
+            });
+          }
+        }
+      }
     }
 
-    // Export all user tracks to audio files
+    if (segments.length === 0) {
+      throw new Error('No segments to export');
+    }
+
+    // Export all segments to audio files
     const exportedRecording = await multiTrackExporter.exportMultiTrack(
-      userTracks,
+      segments,
       {
         sessionId: session.sessionId,
         sessionStartTime: session.startTime,
@@ -457,7 +620,7 @@ export class BasicRecordingService {
 
     logger.info('Session exported successfully', {
       sessionId,
-      trackCount: exportedRecording.tracks.length,
+      segmentCount: exportedRecording.tracks.length,
       totalSize: exportedRecording.totalSize,
       outputDirectory: exportedRecording.outputDirectory
     });
