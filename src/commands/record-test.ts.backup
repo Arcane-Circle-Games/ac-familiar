@@ -10,9 +10,6 @@ import { RecordingManager } from '../services/recording/RecordingManager';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
-import { recordingUploadService } from '../services/upload/RecordingUploadService';
-import { recordingService } from '../services/api/recordings';
-import { multiTrackExporter } from '../services/processing/MultiTrackExporter';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -21,7 +18,7 @@ const recordingManager = new RecordingManager();
 
 export const recordTestCommand = {
   name: 'record-test',
-  description: 'Test voice recording functionality with file export and API upload',
+  description: 'Test voice recording functionality with file export',
   options: [
     {
       name: 'action',
@@ -35,22 +32,12 @@ export const recordTestCommand = {
         { name: 'status', value: 'status' },
         { name: 'list-files', value: 'list-files' },
         { name: 'transcribe', value: 'transcribe' },
-        { name: 'view-transcript', value: 'view-transcript' },
-        { name: 'upload', value: 'upload' },
-        { name: 'api-status', value: 'api-status' },
-        { name: 'api-list', value: 'api-list' },
-        { name: 'api-transcribe', value: 'api-transcribe' }
+        { name: 'view-transcript', value: 'view-transcript' }
       ]
     },
     {
       name: 'session-id',
-      description: 'Session ID (required for transcribe/view-transcript/upload)',
-      type: 3, // STRING type
-      required: false
-    },
-    {
-      name: 'recording-id',
-      description: 'API Recording ID (required for api-status/api-transcribe)',
+      description: 'Session ID (required for transcribe/view-transcript)',
       type: 3, // STRING type
       required: false
     }
@@ -68,26 +55,14 @@ export const recordTestCommand = {
     const member = interaction.member as GuildMember;
     const action = (interaction as ChatInputCommandInteraction).options.getString('action', true);
 
-    // Check if user is in a voice channel for recording actions
+    // Check if user is in a voice channel
     const voiceChannel = member.voice.channel as VoiceChannel;
-    if (!voiceChannel && (action === 'start' || action === 'stop' || action === 'stop-save')) {
+    if (!voiceChannel && (action === 'start' || action === 'stop')) {
       await interaction.reply({
         content: '❌ You must be in a voice channel to use this command',
         ephemeral: true
       });
       return;
-    }
-
-    // Defer reply immediately for long-running actions (non-ephemeral)
-    const deferredActions = ['start', 'stop', 'stop-save', 'transcribe', 'upload', 'api-transcribe'];
-    if (deferredActions.includes(action)) {
-      await interaction.deferReply();
-    }
-
-    // Defer ephemeral replies for read-only actions
-    const ephemeralActions = ['list-files'];
-    if (ephemeralActions.includes(action)) {
-      await interaction.deferReply({ ephemeral: true });
     }
 
     try {
@@ -112,18 +87,6 @@ export const recordTestCommand = {
           break;
         case 'view-transcript':
           await handleViewTranscript(interaction);
-          break;
-        case 'upload':
-          await handleUpload(interaction);
-          break;
-        case 'api-status':
-          await handleApiStatus(interaction);
-          break;
-        case 'api-list':
-          await handleApiList(interaction);
-          break;
-        case 'api-transcribe':
-          await handleApiTranscribe(interaction);
           break;
         default:
           await interaction.reply({
@@ -157,6 +120,8 @@ async function handleStartRecording(
   voiceChannel: VoiceChannel,
   member: GuildMember
 ): Promise<void> {
+  await interaction.deferReply();
+
   const result = await recordingManager.startRecording(voiceChannel, member);
 
   const embed = new EmbedBuilder()
@@ -180,6 +145,8 @@ async function handleStopRecording(
   saveFiles: boolean,
   autoTranscribe: boolean
 ): Promise<void> {
+  await interaction.deferReply();
+
   const result = await recordingManager.stopRecording(channelId, saveFiles, autoTranscribe);
 
   const embed = new EmbedBuilder()
@@ -270,6 +237,8 @@ async function handleGetStatus(
 }
 
 async function handleListFiles(interaction: CommandInteraction): Promise<void> {
+  await interaction.deferReply({ ephemeral: true });
+
   try {
     const recordingsDir = './recordings';
     const entries = await fs.readdir(recordingsDir, { withFileTypes: true });
@@ -332,6 +301,8 @@ async function handleTranscribe(interaction: CommandInteraction): Promise<void> 
     });
     return;
   }
+
+  await interaction.deferReply();
 
   try {
     // Check if already transcribed
@@ -436,229 +407,6 @@ async function handleViewTranscript(interaction: CommandInteraction): Promise<vo
 
     await interaction.editReply({
       content: `❌ **Failed to load transcript:** ${errorMsg}`
-    });
-  }
-}
-
-async function handleUpload(interaction: CommandInteraction): Promise<void> {
-  const sessionId = (interaction as ChatInputCommandInteraction).options.getString('session-id');
-
-  if (!sessionId) {
-    await interaction.reply({
-      content: '❌ Please provide a session-id to upload',
-      ephemeral: true
-    });
-    return;
-  }
-
-  try {
-    const member = interaction.member as GuildMember;
-    const recordingsDir = './recordings';
-    const sessionPath = path.join(recordingsDir, sessionId);
-
-    // Check if session directory exists
-    try {
-      await fs.access(sessionPath);
-    } catch {
-      await interaction.editReply({
-        content: `❌ Session \`${sessionId}\` not found in recordings directory`
-      });
-      return;
-    }
-
-    // Load exported recording metadata
-    const metadataPath = path.join(sessionPath, 'metadata.json');
-    const metadataContent = await fs.readFile(metadataPath, 'utf-8');
-    const exportedRecording = JSON.parse(metadataContent);
-
-    // Build upload metadata
-    const metadata = {
-      sessionId: exportedRecording.sessionId,
-      guildId: interaction.guild!.id,
-      guildName: interaction.guild!.name,
-      channelId: member.voice.channel?.id || 'unknown',
-      userId: member.id,
-      duration: exportedRecording.sessionEndTime - exportedRecording.sessionStartTime,
-      recordedAt: new Date(exportedRecording.sessionStartTime).toISOString(),
-      participants: exportedRecording.tracks.map((track: any) => ({
-        userId: track.metadata.userId,
-        username: track.metadata.username
-      }))
-    };
-
-    const progressEmbed = new EmbedBuilder()
-      .setTitle('📤 Uploading...')
-      .setDescription(`Uploading session \`${sessionId}\` to API...`)
-      .setColor(0xffaa00)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [progressEmbed] });
-
-    // Upload with retry
-    const result = await recordingUploadService.uploadWithRetry(exportedRecording, metadata, 3);
-
-    if (result.success) {
-      const successEmbed = new EmbedBuilder()
-        .setTitle('✅ Upload Successful')
-        .setDescription(`Session uploaded to API`)
-        .setColor(0x00ff00)
-        .addFields(
-          { name: 'Recording ID', value: result.recordingId || 'N/A', inline: false },
-          { name: 'Status', value: 'Upload complete', inline: true },
-          { name: 'Processing Time', value: result.estimatedProcessingTime || 'N/A', inline: true },
-          { name: 'Audio Files', value: result.downloadUrls?.audio.length.toString() || '0', inline: true }
-        )
-        .setTimestamp();
-
-      if (result.viewUrl) {
-        successEmbed.addFields({ name: 'View URL', value: result.viewUrl, inline: false });
-      }
-
-      await interaction.editReply({ embeds: [successEmbed] });
-    } else {
-      await interaction.editReply({
-        content: `❌ **Upload failed:** ${result.error}`
-      });
-    }
-  } catch (error) {
-    logger.error('Upload error:', error);
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    await interaction.editReply({
-      content: `❌ **Upload failed:** ${errorMsg}`
-    });
-  }
-}
-
-async function handleApiStatus(interaction: CommandInteraction): Promise<void> {
-  const recordingId = (interaction as ChatInputCommandInteraction).options.getString('recording-id');
-
-  if (!recordingId) {
-    await interaction.reply({
-      content: '❌ Please provide a recording-id',
-      ephemeral: true
-    });
-    return;
-  }
-
-  await interaction.deferReply({ ephemeral: true });
-
-  try {
-    const recording = await recordingService.getRecordingDetails(recordingId);
-
-    if (!recording) {
-      await interaction.editReply({
-        content: `❌ Recording \`${recordingId}\` not found`
-      });
-      return;
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('📊 Recording Status')
-      .setDescription(`Recording ID: \`${recordingId}\``)
-      .setColor(0x0099ff)
-      .addFields(
-        { name: 'Status', value: recording.status, inline: true },
-        { name: 'Duration', value: `${Math.round(recording.duration / 1000)}s`, inline: true },
-        { name: 'Participants', value: recording.participantCount.toString(), inline: true },
-        { name: 'Recorded At', value: new Date(recording.recordedAt).toLocaleString(), inline: false }
-      )
-      .setTimestamp();
-
-    if (recording.transcript) {
-      embed.addFields(
-        { name: 'Transcription', value: `${recording.transcript.wordCount} words (${(recording.transcript.confidence * 100).toFixed(1)}% confidence)`, inline: false }
-      );
-    }
-
-    if (recording.viewUrl) {
-      embed.addFields({ name: 'View URL', value: recording.viewUrl, inline: false });
-    }
-
-    await interaction.editReply({ embeds: [embed] });
-  } catch (error) {
-    logger.error('API status error:', error);
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    await interaction.editReply({
-      content: `❌ **Failed to get status:** ${errorMsg}`
-    });
-  }
-}
-
-async function handleApiList(interaction: CommandInteraction): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
-
-  try {
-    const result = await recordingService.listRecordingsPhase2C({
-      guildId: interaction.guild!.id,
-      limit: 10
-    });
-
-    if (!result || result.recordings.length === 0) {
-      await interaction.editReply({
-        content: '📂 No recordings found on the API for this server'
-      });
-      return;
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('📂 API Recordings')
-      .setDescription(`Found ${result.pagination.total} recording(s)`)
-      .setColor(0x0099ff)
-      .setTimestamp();
-
-    for (const rec of result.recordings.slice(0, 5)) {
-      embed.addFields({
-        name: `${rec.guildName} - ${new Date(rec.recordedAt).toLocaleDateString()}`,
-        value: [
-          `**ID:** \`${rec.id}\``,
-          `**Status:** ${rec.status}`,
-          `**Duration:** ${Math.round(rec.duration / 1000)}s`,
-          `**Participants:** ${rec.participantCount}`,
-          rec.wordCount ? `**Words:** ${rec.wordCount}` : '',
-          `**View:** ${rec.viewUrl}`
-        ].filter(Boolean).join('\n'),
-        inline: false
-      });
-    }
-
-    await interaction.editReply({ embeds: [embed] });
-  } catch (error) {
-    logger.error('API list error:', error);
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    await interaction.editReply({
-      content: `❌ **Failed to list recordings:** ${errorMsg}`
-    });
-  }
-}
-
-async function handleApiTranscribe(interaction: CommandInteraction): Promise<void> {
-  const recordingId = (interaction as ChatInputCommandInteraction).options.getString('recording-id');
-
-  if (!recordingId) {
-    await interaction.reply({
-      content: '❌ Please provide a recording-id',
-      ephemeral: true
-    });
-    return;
-  }
-
-  try {
-    const success = await recordingService.retryTranscription(recordingId, interaction.user.id);
-
-    if (success) {
-      await interaction.editReply({
-        content: `✅ Transcription job queued for recording \`${recordingId}\``
-      });
-    } else {
-      await interaction.editReply({
-        content: `❌ Failed to queue transcription for recording \`${recordingId}\``
-      });
-    }
-  } catch (error) {
-    logger.error('API transcribe error:', error);
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    await interaction.editReply({
-      content: `❌ **Failed to trigger transcription:** ${errorMsg}`
     });
   }
 }

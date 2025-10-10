@@ -71,7 +71,7 @@ export class RecordingUploadService {
         const fileStream = fs.createReadStream(track.filePath);
         const filename = track.filePath.split('/').pop() || 'audio.wav';
 
-        form.append('files', fileStream, {
+        form.append(`file${i}`, fileStream, {
           filename,
           contentType: 'audio/wav',
         });
