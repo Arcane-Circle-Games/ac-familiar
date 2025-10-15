@@ -48,18 +48,21 @@ export class ArcaneCircleAPIClient {
       (requestConfig) => {
         const startTime = Date.now();
         requestConfig.metadata = { startTime };
-        
-        // Add authentication headers
-        if (this.authToken) {
+
+        // Add bot authentication header (preferred for bot-to-API communication)
+        if (config.BOT_API_KEY) {
+          requestConfig.headers.Authorization = `Bearer ${config.BOT_API_KEY}`;
+        }
+        // Fallback to token-based auth if set
+        else if (this.authToken) {
           requestConfig.headers.Authorization = `Bearer ${this.authToken}`;
         } else if (this.apiKey) {
           requestConfig.headers['X-API-Key'] = this.apiKey;
         }
-        
-        // Add Vercel bypass token if available
+
+        // Add Vercel bypass token as header if available (for production Vercel deployments)
         if (config.VERCEL_BYPASS_TOKEN) {
-          requestConfig.params = requestConfig.params || {};
-          requestConfig.params['x-vercel-protection-bypass'] = config.VERCEL_BYPASS_TOKEN;
+          requestConfig.headers['x-vercel-protection-bypass'] = config.VERCEL_BYPASS_TOKEN;
         }
         
         logDebug(`API Request: ${requestConfig.method?.toUpperCase()} ${requestConfig.url}`, {
@@ -106,6 +109,7 @@ export class ArcaneCircleAPIClient {
           logError('API Response Error', new Error(error.message), {
             status: error.response.status,
             statusText: error.response.statusText,
+            responseBody: error.response.data,
             dataSize: error.response.data ? JSON.stringify(error.response.data).length : 0,
             url: error.config?.url,
             method: error.config?.method

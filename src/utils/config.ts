@@ -8,20 +8,23 @@ const configSchema = z.object({
   DISCORD_TOKEN: z.string().min(1, 'Discord token is required'),
   DISCORD_CLIENT_ID: z.string().min(1, 'Discord client ID is required'),
   DISCORD_GUILD_ID: z.string().optional(),
-  
+
+  // Environment Configuration (needs to be early for conditional defaults)
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
   // Platform API Configuration
-  PLATFORM_API_URL: z.string().url('Invalid Platform API URL').default('https://arcanecircle.games/api'),
-  PLATFORM_WEB_URL: z.string().url('Invalid Platform Web URL').default('https://arcanecircle.games'),
+  PLATFORM_API_URL: z.string().url('Invalid Platform API URL').optional(),
+  PLATFORM_WEB_URL: z.string().url('Invalid Platform Web URL').optional(),
   VERCEL_BYPASS_TOKEN: z.string().optional(),
+  BOT_API_KEY: z.string().min(1, 'Bot API key is required'),
   
   // Database Configuration
   DATABASE_URL: z.string().url('Invalid database URL').optional(),
   
   // Redis Configuration
   REDIS_URL: z.string().default('redis://localhost:6379'),
-  
-  // Environment Configuration
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // Logging Configuration
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
   
   // OpenAI Configuration
@@ -64,7 +67,16 @@ const configSchema = z.object({
 
 const parseConfig = () => {
   try {
-    return configSchema.parse(process.env);
+    const parsed = configSchema.parse(process.env);
+
+    // Apply environment-specific defaults
+    const isDev = parsed.NODE_ENV === 'development';
+
+    return {
+      ...parsed,
+      PLATFORM_API_URL: parsed.PLATFORM_API_URL || (isDev ? 'http://localhost:3000/api' : 'https://arcanecircle.games/api'),
+      PLATFORM_WEB_URL: parsed.PLATFORM_WEB_URL || (isDev ? 'http://localhost:3000' : 'https://arcanecircle.games')
+    };
   } catch (error) {
     if (error instanceof z.ZodError) {
       console.error('❌ Invalid configuration:');

@@ -350,9 +350,10 @@ export class TranscriptionStorage {
     try {
       const files = await fs.readdir(sessionDir);
 
-      // Look for transcript JSON files
+      // Look for transcript/summary JSON files (supports both naming conventions)
       const transcriptFiles = files.filter(f =>
-        f.endsWith('_transcript.json') || f.endsWith('transcript.json')
+        f.endsWith('_transcript.json') || f.endsWith('transcript.json') ||
+        f.endsWith('_summary.json') || f.endsWith('summary.json')
       );
 
       if (transcriptFiles.length === 0) {
@@ -360,7 +361,11 @@ export class TranscriptionStorage {
       }
 
       // Prefer new format, but fall back to old format
-      const newFormatFile = transcriptFiles.find(f => !f.includes('_transcript.json') || f.match(/^[^_]+_\d{2}-\d{2}-\d{2}_transcript\.json$/));
+      const newFormatFile = transcriptFiles.find(f =>
+        f.match(/^[^_]+_\d{2}-\d{2}-\d{2}_transcript\.json$/) ||
+        f.match(/^[^_]+_summary\.json$/) ||
+        f.match(/^[^_]+_transcript\.json$/)
+      );
       const transcriptFile = newFormatFile || transcriptFiles[0];
 
       if (!transcriptFile) {

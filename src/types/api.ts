@@ -253,3 +253,90 @@ export interface AuthResponse {
   user: AuthUser;
   token: AuthToken;
 }
+
+// Wiki Types
+export type WikiPageType = 'NPC' | 'Location' | 'Adventure Arc' | 'Session Notes' | 'Item' | 'Faction' | 'Timeline' | 'Custom';
+
+export interface Wiki {
+  id: string;
+  gameId: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WikiPage {
+  id: string;
+  wikiId: string;
+  title: string;
+  content: string;
+  pageType: WikiPageType;
+  order?: number;
+  parentPageId?: string;
+  isPublic: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WikiSettings {
+  wikiId: string;
+  allowPlayerEdits: boolean;
+  allowPlayerCreate: boolean;
+  moderationEnabled: boolean;
+  defaultPageType: WikiPageType;
+  updatedAt: string;
+}
+
+export interface WikiAttachment {
+  id: string;
+  wikiId: string;
+  pageId?: string;
+  filename: string;
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  storageUrl: string;
+  uploadedBy: string;
+  createdAt: string;
+}
+
+// Wiki Request Types
+export interface CreateWikiRequest {
+  gameId: string;
+  name?: string;
+  description?: string;
+}
+
+export interface CreateWikiPageRequest {
+  title: string;
+  content: string;
+  pageType: WikiPageType;
+  parentPageId?: string;
+  isPublic?: boolean;
+}
+
+export interface UpdateWikiPageRequest extends Partial<CreateWikiPageRequest> {
+  order?: number;
+}
+
+export interface UpdateWikiSettingsRequest {
+  allowPlayerEdits?: boolean;
+  allowPlayerCreate?: boolean;
+  moderationEnabled?: boolean;
+  defaultPageType?: WikiPageType;
+}
+
+// Wiki Response Types
+export interface WikiResponse {
+  wiki: Wiki;
+  pageCount?: number;
+  recentPages?: WikiPage[];
+}
+
+export interface WikiPageResponse {
+  page: WikiPage;
+  children?: WikiPage[];
+  attachments?: WikiAttachment[];
+}
