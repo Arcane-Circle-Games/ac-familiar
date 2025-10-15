@@ -156,6 +156,37 @@ export class SessionService {
       throw error;
     }
   }
+
+  // Get sessions for a specific game (alias for gameId)
+  public async getGameSessions(gameId: string, discordUserId?: string): Promise<Session[]> {
+    try {
+      logInfo('Fetching game sessions', { gameId, discordUserId });
+
+      // Include discordUserId in query params for bot authentication
+      const params: Record<string, string> = { gameId };
+      if (discordUserId) {
+        params['discordUserId'] = discordUserId;
+      }
+
+      const response = await apiClient.get<any>('/sessions', params);
+
+      // Handle different response formats
+      if (Array.isArray(response)) {
+        return response;
+      }
+      if (response.data && Array.isArray(response.data)) {
+        return response.data;
+      }
+      if (response.sessions && Array.isArray(response.sessions)) {
+        return response.sessions;
+      }
+
+      return [];
+    } catch (error) {
+      logError('Failed to fetch game sessions', error as Error, { gameId, discordUserId });
+      return [];
+    }
+  }
   
   // Get upcoming sessions
   public async getUpcomingSessions(limit: number = 10): Promise<ApiResponse<Session[]>> {

@@ -9,6 +9,8 @@ import { gamesCommand } from '../commands/games';
 import { gameInfoCommand, gameInfoCommandData } from '../commands/game-info';
 import { gmCommand } from '../commands/gm';
 import { recordTestCommand } from '../commands/record-test';
+import { postSummaryCommand } from '../commands/post-summary';
+import { testSummaryCommand } from '../commands/test-summary';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -84,7 +86,9 @@ export class ArcaneBot {
       gamesCommand,
       gameInfoCommand,
       gmCommand,
-      recordTestCommand
+      recordTestCommand,
+      postSummaryCommand,
+      testSummaryCommand
     ];
     
     commands.forEach(command => {
