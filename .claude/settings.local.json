@@ -13,7 +13,8 @@
       "WebFetch(domain:github.com)",
       "Bash(npm view:*)",
       "Bash(where vulkaninfo)",
-      "Bash(vulkaninfo:*)"
+      "Bash(vulkaninfo:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

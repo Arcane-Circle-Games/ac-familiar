@@ -1,4 +1,19 @@
-import { initWhisper, type WhisperContext, type TranscribeResult, type LibVariant } from '@fugood/whisper.node';
+// Conditional import - only works on supported platforms
+let initWhisper: any;
+let WhisperContext: any;
+let TranscribeResult: any;
+let LibVariant: any;
+
+try {
+  const whisperModule = require('@fugood/whisper.node');
+  initWhisper = whisperModule.initWhisper;
+  WhisperContext = whisperModule.WhisperContext;
+  TranscribeResult = whisperModule.TranscribeResult;
+  LibVariant = whisperModule.LibVariant;
+} catch (error) {
+  // Whisper.node not available on this platform - that's OK
+  // Users can still use cloud transcription or upload pre-transcribed files
+}
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { logger } from '../../utils/logger';
@@ -10,6 +25,15 @@ import {
 } from '../../types/transcription';
 
 export type WhisperModelSize = 'tiny' | 'tiny.en' | 'base' | 'base.en' | 'small' | 'small.en' | 'medium' | 'medium.en' | 'large-v1' | 'large-v2' | 'large-v3' | 'large-v3-turbo';
+
+export interface DownloadProgress {
+  downloadedBytes: number;
+  totalBytes: number;
+  percentage: number;
+  modelSize: WhisperModelSize;
+}
+
+export type DownloadProgressCallback = (progress: DownloadProgress) => void;
 
 interface WhisperModelInfo {
   size: WhisperModelSize;
@@ -35,49 +59,69 @@ const WHISPER_MODELS: Record<WhisperModelSize, WhisperModelInfo> = {
 };
 
 export class LocalWhisperService {
-  private context: WhisperContext | null = null;
+  private context: any = null; // WhisperContext | null
   private currentModelPath: string | null = null;
   private modelsDir: string;
   private modelSize: WhisperModelSize;
   private useGpu: boolean;
-  private libVariant: LibVariant;
+  private libVariant: any; // LibVariant
+  private isPlatformSupported: boolean;
 
   constructor(
     modelSize: WhisperModelSize = 'base',
     modelsDir: string = './models',
     useGpu: boolean = true,
-    libVariant: LibVariant = 'default'
+    libVariant: any = 'default'
   ) {
     this.modelSize = modelSize;
     this.modelsDir = modelsDir;
     this.useGpu = useGpu;
     this.libVariant = libVariant;
+    this.isPlatformSupported = !!initWhisper;
 
-    logger.info('LocalWhisperService initialized', {
-      modelSize,
-      modelsDir,
-      useGpu,
-      libVariant
-    });
+    if (!this.isPlatformSupported) {
+      logger.warn('LocalWhisperService: whisper.node not available on this platform', {
+        platform: process.platform,
+        arch: process.arch
+      });
+    } else {
+      logger.info('LocalWhisperService initialized', {
+        modelSize,
+        modelsDir,
+        useGpu,
+        libVariant
+      });
+    }
   }
 
   /**
    * Check if service is available (model loaded)
    */
   isAvailable(): boolean {
-    return this.context !== null;
+    return this.isPlatformSupported && this.context !== null;
+  }
+
+  /**
+   * Check if platform supports local Whisper
+   */
+  checkPlatformSupport(): boolean {
+    return this.isPlatformSupported;
   }
 
   /**
    * Initialize the Whisper context with the configured model
    */
-  async initialize(): Promise<void> {
+  async initialize(onProgress?: DownloadProgressCallback): Promise<void> {
+    if (!this.isPlatformSupported) {
+      throw new Error(`Local Whisper is not supported on this platform (${process.platform}/${process.arch}). Use cloud transcription or upload pre-transcribed files instead.`);
+    }
+
     try {
       // Ensure models directory exists
       await fs.mkdir(this.modelsDir, { recursive: true });
 
       // Get model path
-      const modelPath = await this.ensureModelDownloaded(this.modelSize);
+      const modelPath = await this.ensureModelDownloaded(this.modelSize, onProgress);
 
       logger.info('Initializing Whisper context', { modelPath, useGpu: this.useGpu });
 
@@ -99,7 +143,7 @@ export class LocalWhisperService {
   /**
    * Ensure model is downloaded, download if missing
    */
-  private async ensureModelDownloaded(modelSize: WhisperModelSize): Promise<string> {
+  private async ensureModelDownloaded(modelSize: WhisperModelSize, onProgress?: DownloadProgressCallback): Promise<string> {
     const modelInfo = WHISPER_MODELS[modelSize];
     const modelPath = path.join(this.modelsDir, modelInfo.filename);
 
@@ -111,7 +155,7 @@ export class LocalWhisperService {
     } catch {
       // Model doesn't exist, need to download
       logger.info(`Model ${modelSize} not found, downloading... (Size: ${modelInfo.fileSize})`);
-      await this.downloadModel(modelInfo, modelPath);
+      await this.downloadModel(modelInfo, modelPath, onProgress);
       return modelPath;
     }
   }
@@ -119,7 +163,7 @@ export class LocalWhisperService {
   /**
    * Download a Whisper model from Hugging Face
    */
-  private async downloadModel(modelInfo: WhisperModelInfo, outputPath: string): Promise<void> {
+  private async downloadModel(modelInfo: WhisperModelInfo, outputPath: string, onProgress?: DownloadProgressCallback): Promise<void> {
     logger.info(`Downloading ${modelInfo.size} model from ${modelInfo.url}`);
 
     try {
@@ -132,9 +176,45 @@ export class LocalWhisperService {
       const totalSize = parseInt(response.headers.get('content-length') || '0', 10);
       let downloadedSize = 0;
 
-      // Stream download with progress
-      const buffer = await response.arrayBuffer();
-      await fs.writeFile(outputPath, Buffer.from(buffer));
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      // Stream download with progress tracking
+      const chunks: Uint8Array[] = [];
+      const reader = response.body.getReader();
+      let lastProgressUpdate = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) break;
+
+          if (value) {
+            chunks.push(value);
+            downloadedSize += value.length;
+
+            // Report progress every 5% or if callback provided
+            const percentage = Math.round((downloadedSize / totalSize) * 100);
+            if (onProgress && (percentage - lastProgressUpdate >= 5 || percentage === 100)) {
+              onProgress({
+                downloadedBytes: downloadedSize,
+                totalBytes: totalSize,
+                percentage,
+                modelSize: modelInfo.size
+              });
+              lastProgressUpdate = percentage;
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      // Combine chunks and write to file
+      const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)));
+      await fs.writeFile(outputPath, buffer);
 
       logger.info(`Model ${modelInfo.size} downloaded successfully to ${outputPath}`);
     } catch (error) {
@@ -192,7 +272,7 @@ export class LocalWhisperService {
       });
 
       // Convert to UserTranscript format
-      const segments: TranscriptSegment[] = result.segments.map(seg => ({
+      const segments: TranscriptSegment[] = result.segments.map((seg: any) => ({
         text: seg.text.trim(),
         start: seg.t0 / 1000, // Convert from milliseconds to seconds
         end: seg.t1 / 1000,
@@ -200,9 +280,8 @@ export class LocalWhisperService {
       }));
 
       // Calculate stats
-      const duration = segments.length > 0
-        ? segments[segments.length - 1].end
-        : 0;
+      const lastSegment = segments[segments.length - 1];
+      const duration = lastSegment ? lastSegment.end : 0;
       const wordCount = result.result.trim().split(/\s+/).length;
       const avgConfidence = 0.95; // Default confidence for local whisper
 
@@ -312,6 +391,27 @@ export class LocalWhisperService {
     } else {
       const minutes = Math.ceil(estimatedSeconds / 60);
       return `~${minutes}m`;
+    }
+  }
+
+  /**
+   * Download a specific model
+   */
+  async downloadModelBySize(modelSize: WhisperModelSize, onProgress?: DownloadProgressCallback): Promise<void> {
+    const modelInfo = WHISPER_MODELS[modelSize];
+    const modelPath = path.join(this.modelsDir, modelInfo.filename);
+
+    // Ensure directory exists
+    await fs.mkdir(this.modelsDir, { recursive: true });
+
+    // Check if already downloaded
+    try {
+      await fs.access(modelPath);
+      logger.info(`Model ${modelSize} already exists at ${modelPath}`);
+      return;
+    } catch {
+      // Model doesn't exist, download it
+      await this.downloadModel(modelInfo, modelPath, onProgress);
     }
   }
 

@@ -93,3 +93,38 @@ export interface TranscriptionResult {
   error?: string;
   processingTime?: number; // Time taken in ms
 }
+
+/**
+ * Local transcript upload format - Enhanced manifest with transcription data
+ */
+export interface LocalTranscriptSegment {
+  userId: string;
+  username: string;
+  segmentIndex: number;
+  fileName: string;
+  absoluteStartTime: number; // Unix timestamp in ms
+  absoluteEndTime: number; // Unix timestamp in ms
+  duration: number; // Duration in ms
+  transcription: {
+    text: string; // Full transcript text for this segment
+    segments: Array<{
+      start: number; // Relative timestamp in seconds (from segment start)
+      end: number; // Relative timestamp in seconds
+      text: string;
+      confidence: number;
+    }>;
+    wordCount: number;
+    confidence: number; // Average confidence
+  };
+}
+
+export interface LocalTranscriptManifest {
+  sessionId: string;
+  sessionStartTime: number; // Unix timestamp in ms
+  sessionEndTime: number; // Unix timestamp in ms
+  guildName?: string;
+  format: 'segmented';
+  participantCount?: number;
+  totalSize?: number;
+  segments: LocalTranscriptSegment[];
+}

@@ -92,9 +92,21 @@ Commands are registered in `src/bot/index.ts` in the `loadCommands()` method.
 **Key Features**:
 - Per-user audio stream capture from Discord voice channels
 - PCM audio conversion using @discordjs/opus
-- Optional transcription via OpenAI Whisper API
+- Silence-based segmentation (multi-track export)
 - Integration with platform API to store recordings and transcriptions
 - Session tracking with UUIDs
+
+**Transcription System**:
+The bot supports dual-tier transcription:
+- **Free Tier**: Users transcribe on platform using WebAssembly Whisper (browser-based, free compute)
+- **Paid Tier**: Automatic cloud transcription via OpenAI Whisper API (background queue)
+
+**See [TRANSCRIPTION.md](./TRANSCRIPTION.md) for comprehensive documentation** including:
+- User workflows for both tiers
+- Bot commands (`/download-recording`, `/upload-transcript`, `/transcribe`)
+- Platform integration (WebAssembly vs OpenAI)
+- Database schema and API endpoints
+- Cost management and upgrade flow
 
 ### Type System
 - `src/types/api.ts` - API request/response interfaces matching platform schema
@@ -178,6 +190,29 @@ Use `/test-api` command to verify:
 - Vercel bypass token validity
 
 For development, set `DISCORD_GUILD_ID` to register commands instantly to a test guild (vs. global registration which takes ~1 hour).
+
+## Bot Commands Reference
+
+**Game Discovery:**
+- `/games` - Browse available games with filtering/pagination
+- `/game-info game:{name}` - Get detailed info about a specific game
+- `/gm` - Browse GMs and their offerings
+
+**Account Management:**
+- `/link` - Get link to connect Discord account via OAuth
+- `/test-api` - Test API connectivity and authentication
+
+**Recording & Transcription:**
+- `/record-test action:start` - Start recording voice channel
+- `/record-test action:stop-save` - Stop and save recording
+- `/download-recording session-id:{id}` - Get download links for recording files
+- `/upload-transcript file:{json}` - Upload locally-generated transcript
+- `/transcribe` - View guide for local transcription workflow
+
+**Utility:**
+- `/ping` - Check bot responsiveness
+
+**See [TRANSCRIPTION.md](./TRANSCRIPTION.md) for detailed transcription workflows.**
 
 ## Common Patterns
 
