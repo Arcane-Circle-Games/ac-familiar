@@ -53,6 +53,18 @@ export const recordTestCommand = {
       description: 'API Recording ID (required for api-status/api-transcribe)',
       type: 3, // STRING type
       required: false
+    },
+    {
+      name: 'upload',
+      description: 'Automatically upload to platform after saving (stop-save only)',
+      type: 5, // BOOLEAN type
+      required: false
+    },
+    {
+      name: 'transcribe',
+      description: 'Automatically transcribe after saving (stop-save only)',
+      type: 5, // BOOLEAN type
+      required: false
     }
   ],
 
@@ -96,10 +108,15 @@ export const recordTestCommand = {
           await handleStartRecording(interaction, voiceChannel, member);
           break;
         case 'stop':
-          await handleStopRecording(interaction, voiceChannel.id, false, false);
+          await handleStopRecording(interaction, voiceChannel.id, false, false, false);
           break;
         case 'stop-save':
-          await handleStopRecording(interaction, voiceChannel.id, true, config.RECORDING_AUTO_TRANSCRIBE);
+          {
+            const chatInteraction = interaction as ChatInputCommandInteraction;
+            const shouldUpload = chatInteraction.options.getBoolean('upload') ?? false;
+            const shouldTranscribe = chatInteraction.options.getBoolean('transcribe') ?? config.RECORDING_AUTO_TRANSCRIBE;
+            await handleStopRecording(interaction, voiceChannel, member, true, shouldTranscribe, shouldUpload);
+          }
           break;
         case 'status':
           await handleGetStatus(interaction, voiceChannel?.id);
@@ -176,11 +193,13 @@ async function handleStartRecording(
 
 async function handleStopRecording(
   interaction: CommandInteraction,
-  channelId: string,
+  voiceChannel: VoiceChannel,
+  member: GuildMember,
   saveFiles: boolean,
-  autoTranscribe: boolean
+  autoTranscribe: boolean,
+  autoUpload: boolean
 ): Promise<void> {
-  const result = await recordingManager.stopRecording(channelId, saveFiles, autoTranscribe);
+  const result = await recordingManager.stopRecording(voiceChannel.id, saveFiles, autoTranscribe);
 
   const embed = new EmbedBuilder()
     .setTitle('🛑 Recording Stopped')
@@ -206,6 +225,43 @@ async function handleStopRecording(
       embed.setFooter({ text: 'Phase 2B - Audio + Transcription saved!' });
     } else {
       embed.setFooter({ text: 'Phase 2A - Audio files saved to disk!' });
+    }
+
+    // Auto-upload if requested
+    if (autoUpload) {
+      try {
+        embed.addFields({ name: 'Status', value: '📤 Uploading to platform...', inline: false });
+        await interaction.editReply({ embeds: [embed] });
+
+        const uploadResult = await recordingManager.uploadRecording(
+          result.exportedRecording,
+          voiceChannel,
+          member
+        );
+
+        if (uploadResult.success) {
+          embed.spliceFields(-1, 1); // Remove "Uploading..." field
+          embed.addFields(
+            { name: 'Upload', value: '✅ Uploaded to platform', inline: false },
+            { name: 'Recording ID', value: uploadResult.recordingId || 'N/A', inline: true }
+          );
+          if (uploadResult.viewUrl) {
+            embed.addFields({ name: 'View URL', value: uploadResult.viewUrl, inline: false });
+          }
+          embed.setFooter({ text: 'Recording saved and uploaded!' });
+        } else {
+          embed.spliceFields(-1, 1);
+          embed.addFields({ name: 'Upload', value: `❌ Upload failed: ${uploadResult.error}`, inline: false });
+        }
+      } catch (error) {
+        logger.error('Auto-upload failed:', error);
+        embed.spliceFields(-1, 1);
+        embed.addFields({
+          name: 'Upload',
+          value: `❌ Upload error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          inline: false
+        });
+      }
     }
   } else {
     embed.setFooter({ text: 'Memory only - Use "stop-save" to save files' });
@@ -466,23 +522,41 @@ async function handleUpload(interaction: CommandInteraction): Promise<void> {
       return;
     }
 
-    // Load exported recording metadata
-    const metadataPath = path.join(sessionPath, 'metadata.json');
-    const metadataContent = await fs.readFile(metadataPath, 'utf-8');
-    const exportedRecording = JSON.parse(metadataContent);
+    // Load exported recording manifest
+    const manifestPath = path.join(sessionPath, 'manifest.json');
+    const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+    const manifest = JSON.parse(manifestContent);
+
+    // Build ExportedRecording object from manifest
+    const exportedRecording = {
+      sessionId: manifest.sessionId,
+      sessionStartTime: manifest.sessionStartTime,
+      sessionEndTime: manifest.sessionEndTime,
+      tracks: manifest.segments.map((seg: any) => ({
+        filePath: path.join(sessionPath, seg.fileName),
+        metadata: {
+          userId: seg.userId,
+          username: seg.username,
+          segmentIndex: seg.segmentIndex
+        }
+      })),
+      outputDirectory: sessionPath,
+      totalSize: manifest.totalSize,
+      participantCount: manifest.participantCount
+    };
 
     // Build upload metadata
     const metadata = {
-      sessionId: exportedRecording.sessionId,
+      sessionId: manifest.sessionId,
       guildId: interaction.guild!.id,
       guildName: interaction.guild!.name,
       channelId: member.voice.channel?.id || 'unknown',
       userId: member.id,
-      duration: exportedRecording.sessionEndTime - exportedRecording.sessionStartTime,
-      recordedAt: new Date(exportedRecording.sessionStartTime).toISOString(),
-      participants: exportedRecording.tracks.map((track: any) => ({
-        userId: track.metadata.userId,
-        username: track.metadata.username
+      duration: manifest.duration,
+      recordedAt: new Date(manifest.sessionStartTime).toISOString(),
+      participants: manifest.segments.map((seg: any) => ({
+        userId: seg.userId,
+        username: seg.username
       }))
     };
 

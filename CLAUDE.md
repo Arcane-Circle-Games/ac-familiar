@@ -240,3 +240,4 @@ Use EmbedBuilder for formatted responses with game/campaign information (see `/g
 - `/systems` endpoint may not exist on platform API
 - Recording system requires voice intents and opus dependencies
 - Transcription requires OpenAI API key and credits
+- as a rule, if you get back an unexpected api response, just console log the entire response to see the structure better

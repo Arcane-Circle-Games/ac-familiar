@@ -107,17 +107,39 @@ export class RecordingUploadService {
 
       const uploadDuration = Date.now() - startTime;
 
-      logger.info(`Upload completed in ${uploadDuration}ms`, {
+      // Log the full response to debug structure
+      logger.info(`Upload completed in ${uploadDuration}ms - Full response:`, {
         sessionId: metadata.sessionId,
-        recordingId: response.data.recording.id,
+        responseData: JSON.stringify(response.data, null, 2),
+        responseType: typeof response.data,
+        hasData: !!response.data
       });
+
+      // Handle response - platform may return different formats
+      const recording = response.data?.recording || response.data;
+
+      logger.info(`Parsed recording object:`, {
+        sessionId: metadata.sessionId,
+        recordingId: (recording as any)?.id || 'unknown',
+        recordingKeys: recording ? Object.keys(recording) : 'none',
+        responseStructure: response.data ? Object.keys(response.data) : 'none'
+      });
+
+      if (!recording) {
+        logger.warn('Upload succeeded but response has unexpected format', {
+          responseData: response.data
+        });
+        return {
+          success: true,
+        };
+      }
 
       return {
         success: true,
-        recordingId: response.data?.recording?.id,
-        downloadUrls: response.data?.recording?.downloadUrls,
-        viewUrl: response.data?.recording?.viewUrl,
-        estimatedProcessingTime: response.data?.recording?.estimatedProcessingTime,
+        recordingId: (recording as any).id,
+        downloadUrls: (recording as any).downloadUrls,
+        viewUrl: (recording as any).viewUrl,
+        estimatedProcessingTime: (recording as any).estimatedProcessingTime,
       };
     } catch (error: any) {
       logger.error(`Upload failed for session ${metadata.sessionId}`, error as Error);
@@ -166,7 +188,19 @@ export class RecordingUploadService {
 
       lastError = result;
 
-      // Don't retry on 4xx errors (client errors like validation failures)
+      // Don't retry on 4xx errors (client errors like validation failures or duplicates)
+      if (result.error && (result.error.includes('409') || result.error.includes('Duplicate') || result.error.includes('Conflict'))) {
+        logger.info('Upload skipped - recording already exists on platform', {
+          sessionId: metadata.sessionId,
+          error: result.error,
+        });
+        // Treat duplicates as success since the recording is already uploaded
+        return {
+          success: true,
+          error: 'Recording already uploaded (duplicate session ID)'
+        };
+      }
+
       if (result.error && result.error.includes('4')) {
         logger.error('Upload failed with client error, not retrying', {
           sessionId: metadata.sessionId,
