@@ -1,5 +1,5 @@
-import { config, validateConfig } from './utils/config';
-import { logger, logError, logInfo } from './utils/logger';
+import { validateConfig } from './utils/config';
+import { logError, logInfo } from './utils/logger';
 import { ArcaneBot } from './bot';
 
 async function main() {

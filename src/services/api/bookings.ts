@@ -12,6 +12,7 @@ export interface Booking {
   id: string;
   gameId: string;
   playerId: string;
+  player?: any; // Player object when populated
   status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'WAITLISTED' | 'CANCELLED';
   playerNotes?: string;
   characterConcept?: string;
@@ -53,7 +54,7 @@ export class BookingService {
     bookingId: string,
     status: Booking['status'],
     discordUserId: string,
-    additionalData?: { message?: string; reason?: string }
+    additionalData?: { message?: string | null; reason?: string | null }
   ): Promise<Booking> {
     try {
       logInfo('Updating booking status', { bookingId, status, discordUserId, additionalData });

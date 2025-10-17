@@ -15,7 +15,9 @@
       "Bash(where vulkaninfo)",
       "Bash(vulkaninfo:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run commands:clear:*)"
+      "Bash(npm run commands:clear:*)",
+      "Bash(tee:*)",
+      "Read(//tmp/**)"
     ],
     "deny": [],
     "ask": []

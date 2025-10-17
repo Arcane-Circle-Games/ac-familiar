@@ -1,8 +1,8 @@
-import { 
-  ChatInputCommandInteraction, 
-  EmbedBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
+import {
+  ChatInputCommandInteraction,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
@@ -10,12 +10,11 @@ import {
   ModalSubmitInteraction,
   ButtonInteraction,
   ComponentType,
-  ApplicationCommandType,
   ApplicationCommandOptionType
 } from 'discord.js';
 import { Command } from '../bot/client';
 import { arcaneAPI } from '../services/api';
-import { logInfo, logError } from '../utils/logger';
+import { logError } from '../utils/logger';
 import { config } from '../utils/config';
 
 export const gmCommand: Command = {
@@ -516,7 +515,7 @@ async function handleGameCreate(interaction: ChatInputCommandInteraction) {
     pricePerSession: price,
     timezone,
     shortDescription,
-    contentWarnings: contentWarnings?.split(',').map(w => w.trim())
+    contentWarnings: contentWarnings ? contentWarnings.split(',').map(w => w.trim()) : undefined
   };
   
   // Listen for modal submission
@@ -530,12 +529,25 @@ async function handleGameCreate(interaction: ChatInputCommandInteraction) {
     await modalSubmission.deferReply();
     
     const user = await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
-    
-    const newGame = await arcaneAPI.games.createGame({
-      ...gameData,
+
+    const createData: any = {
+      title: gameData.title,
+      systemId: gameData.systemId,
+      gameType: gameData.gameType,
+      maxPlayers: gameData.maxPlayers,
+      pricePerSession: gameData.pricePerSession,
+      timezone: gameData.timezone,
+      shortDescription: gameData.shortDescription,
       description: fullDescription,
       gmId: user.id
-    });
+    };
+
+    // Only add contentWarnings if defined
+    if (gameData.contentWarnings !== undefined) {
+      createData.contentWarnings = gameData.contentWarnings;
+    }
+
+    const newGame = await arcaneAPI.games.createGame(createData, interaction.user.id);
     
     const embed = new EmbedBuilder()
       .setColor(0x00FF00)
@@ -668,10 +680,11 @@ async function handleGameEdit(interaction: ChatInputCommandInteraction) {
   const gameId = interaction.options.getString('game', true);
   const field = interaction.options.getString('field', true);
   const value = interaction.options.getString('value', true);
-  
+
   try {
-    const user = await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
-    
+    // Verify user is authenticated
+    await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
+
     let updateData: any = {};
     
     if (field === 'max_players') {
@@ -768,18 +781,22 @@ async function handleApplications(interaction: ChatInputCommandInteraction) {
       await interaction.editReply({ embeds: [embed], components: [row] });
       
       // Handle button interactions
-      const filter = (buttonInteraction: ButtonInteraction) => 
+      const filter = (buttonInteraction: ButtonInteraction) =>
         buttonInteraction.user.id === interaction.user.id;
-      
+
       try {
-        const buttonInteraction = await interaction.awaitMessageComponent({ 
-          filter, 
+        const firstBooking = pendingBookings[0];
+        if (!firstBooking) {
+          return;
+        }
+
+        const message = await interaction.fetchReply();
+        const buttonInteraction = await message.awaitMessageComponent({
+          filter,
           time: 60000,
           componentType: ComponentType.Button
         });
-        
-        const firstBooking = pendingBookings[0];
-        
+
         if (buttonInteraction.customId === 'accept_first') {
           await arcaneAPI.bookings.updateBookingStatus(firstBooking.id, 'CONFIRMED', interaction.user.id);
           await buttonInteraction.reply({
@@ -934,13 +951,14 @@ async function handleDeleteGame(interaction: ChatInputCommandInteraction) {
   );
   
   await interaction.reply({ embeds: [embed], components: [row] });
-  
-  const filter = (buttonInteraction: ButtonInteraction) => 
+
+  const filter = (buttonInteraction: ButtonInteraction) =>
     buttonInteraction.user.id === interaction.user.id;
-  
+
   try {
-    const buttonInteraction = await interaction.awaitMessageComponent({ 
-      filter, 
+    const message = await interaction.fetchReply();
+    const buttonInteraction = await message.awaitMessageComponent({
+      filter,
       time: 30000,
       componentType: ComponentType.Button
     });

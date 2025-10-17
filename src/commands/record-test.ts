@@ -12,7 +12,6 @@ import { config } from '../utils/config';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
 import { recordingUploadService } from '../services/upload/RecordingUploadService';
 import { recordingService } from '../services/api/recordings';
-import { multiTrackExporter } from '../services/processing/MultiTrackExporter';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -108,7 +107,7 @@ export const recordTestCommand = {
           await handleStartRecording(interaction, voiceChannel, member);
           break;
         case 'stop':
-          await handleStopRecording(interaction, voiceChannel.id, false, false, false);
+          await handleStopRecording(interaction, voiceChannel, member, false, false, false);
           break;
         case 'stop-save':
           {

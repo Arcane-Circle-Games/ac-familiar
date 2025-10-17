@@ -22,6 +22,11 @@ export class SystemService {
       throw error;
     }
   }
+
+  // Alias for getGameSystems
+  public async listSystems(): Promise<GameSystem[]> {
+    return this.getGameSystems();
+  }
   
   // Get safety tools
   public async getSafetyTools(): Promise<string[]> {

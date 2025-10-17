@@ -38,12 +38,12 @@ export class WebhookListener {
    */
   private setupRoutes(): void {
     // Health check
-    this.app.get('/health', (req: Request, res: Response) => {
+    this.app.get('/health', (_req: Request, res: Response) => {
       res.json({ status: 'ok', service: 'webhook-listener' });
     });
 
     // Recording webhook handler
-    this.app.post('/webhooks/recording-completed', async (req: Request, res: Response) => {
+    this.app.post('/webhooks/recording-completed', async (req: Request, res: Response): Promise<any> => {
       try {
         // Verify signature
         const signature = req.headers['x-webhook-signature'] as string;

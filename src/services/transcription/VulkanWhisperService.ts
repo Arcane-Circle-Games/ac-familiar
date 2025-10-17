@@ -1,4 +1,12 @@
-import { transcribe } from '@kutalia/whisper-node-addon';
+// Conditional import - only works when @kutalia/whisper-node-addon is installed
+let transcribe: any;
+try {
+  const whisperAddon = require('@kutalia/whisper-node-addon');
+  transcribe = whisperAddon.transcribe;
+} catch (error) {
+  // Vulkan Whisper addon not available - that's OK
+  // Users can still use cloud transcription or other local options
+}
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { logger } from '../../utils/logger';
@@ -172,8 +180,9 @@ export class VulkanWhisperService {
       const segments: TranscriptSegment[] = this.parseSegments(result);
 
       // Calculate stats
-      const duration = segments.length > 0
-        ? segments[segments.length - 1].end
+      const lastSegment = segments.length > 0 ? segments[segments.length - 1] : null;
+      const duration = lastSegment
+        ? lastSegment.end
         : 0;
       const wordCount = text.trim().split(/\s+/).length;
       const avgConfidence = 0.95; // Default confidence

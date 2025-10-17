@@ -1,6 +1,5 @@
 import { logger } from '../../utils/logger';
 import { config } from '../../utils/config';
-import { TranscriptionService } from './TranscriptionService';
 import { LocalWhisperService } from './LocalWhisperService';
 import type { UserTranscript, TranscriptionOptions } from '../../types/transcription';
 

@@ -26,23 +26,30 @@ export async function withRetry<T>(
   options: Partial<RetryOptions> = {}
 ): Promise<T> {
   const config = { ...DEFAULT_RETRY_OPTIONS, ...options };
-  let lastError: ApiError;
-  
+  let lastError: ApiError | null = null;
+
   for (let attempt = 1; attempt <= config.maxRetries + 1; attempt++) {
     try {
       const result = await operation();
-      
+
       if (attempt > 1) {
         logDebug(`Operation succeeded on attempt ${attempt}`);
       }
-      
+
       return result;
-      
+
     } catch (error) {
       lastError = error as ApiError;
-      
+
       if (attempt === config.maxRetries + 1) {
-        logError(`Operation failed after ${config.maxRetries} retries`, lastError as Error);
+        const errorObj = {
+          name: 'ApiError',
+          message: lastError.message,
+          statusCode: lastError.statusCode,
+          code: lastError.code,
+          details: lastError.details
+        } as Error;
+        logError(`Operation failed after ${config.maxRetries} retries`, errorObj);
         break;
       }
       
@@ -70,7 +77,10 @@ export async function withRetry<T>(
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  
+
+  if (!lastError) {
+    throw new Error('Operation failed with unknown error');
+  }
   throw lastError;
 }
 
@@ -110,7 +120,7 @@ export class CircuitBreaker {
   
   constructor(
     private threshold: number = 5,
-    private timeout: number = 60000, // 1 minute
+    _timeout: number = 60000, // 1 minute (unused for now)
     private resetTimeout: number = 30000 // 30 seconds
   ) {}
   
@@ -184,6 +194,9 @@ export class RateLimiter {
     
     if (this.requests.length >= this.maxRequests) {
       const oldestRequest = this.requests[0];
+      if (!oldestRequest) {
+        throw new Error('Unexpected empty requests array');
+      }
       const waitTime = this.windowMs - (now - oldestRequest);
       
       logDebug(`Rate limit reached, waiting ${waitTime}ms`);
@@ -234,8 +247,8 @@ export class ResilientApiClient extends RetryableApiClient {
       );
     }
   }
-  
-  public async execute<T>(
+
+  public override async execute<T>(
     operation: () => Promise<T>,
     options: Partial<RetryOptions> = {}
   ): Promise<T> {
@@ -243,7 +256,7 @@ export class ResilientApiClient extends RetryableApiClient {
     if (this.rateLimiter) {
       await this.rateLimiter.waitForSlot();
     }
-    
+
     // Execute with circuit breaker and retry logic
     return this.circuitBreaker.execute(async () => {
       return super.execute(operation, options);

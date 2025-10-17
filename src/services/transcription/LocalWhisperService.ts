@@ -1,13 +1,11 @@
 // Conditional import - only works on supported platforms
 let initWhisper: any;
-let WhisperContext: any;
 let TranscribeResult: any;
 let LibVariant: any;
 
 try {
   const whisperModule = require('@fugood/whisper.node');
   initWhisper = whisperModule.initWhisper;
-  WhisperContext = whisperModule.WhisperContext;
   TranscribeResult = whisperModule.TranscribeResult;
   LibVariant = whisperModule.LibVariant;
 } catch (error) {
@@ -262,7 +260,7 @@ export class LocalWhisperService {
         ...(options?.prompt && { prompt: options.prompt })
       });
 
-      const result: TranscribeResult = await promise;
+      const result: typeof TranscribeResult = await promise;
       const processingTime = Date.now() - startTime;
 
       logger.info(`Transcription completed in ${processingTime}ms`, {
@@ -464,5 +462,5 @@ export const localWhisperService = new LocalWhisperService(
   (config.WHISPER_MODEL_SIZE as WhisperModelSize) || 'base',
   config.WHISPER_MODELS_PATH || './models',
   config.WHISPER_USE_GPU !== false, // Default to true
-  (config.WHISPER_LIB_VARIANT as LibVariant) || 'default'
+  (config.WHISPER_LIB_VARIANT as typeof LibVariant) || 'default'
 );

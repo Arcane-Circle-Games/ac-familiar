@@ -7,6 +7,7 @@ import {
   RecordingUploadMetadata,
   RecordingUploadResponse,
   RecordingDetailsResponse,
+  RecordingStatus,
 } from '../../types/recording-api';
 
 // Re-export for backward compatibility
@@ -68,6 +69,8 @@ export class RecordingUploadService {
       let uploadedBytes = 0;
       for (let i = 0; i < exportedRecording.tracks.length; i++) {
         const track = exportedRecording.tracks[i];
+        if (!track) continue;
+
         const fileStream = fs.createReadStream(track.filePath);
         const filename = track.filePath.split('/').pop() || 'audio.wav';
 
@@ -76,11 +79,12 @@ export class RecordingUploadService {
           contentType: 'audio/wav',
         });
 
+        const fileSize = fileSizes[i] || 0;
         logger.debug(`Added file to upload: ${filename}`, {
-          size: fileSizes[i],
+          size: fileSize,
         });
 
-        uploadedBytes += fileSizes[i];
+        uploadedBytes += fileSize;
 
         if (onProgress) {
           onProgress({
@@ -256,16 +260,25 @@ export class RecordingUploadService {
     try {
       const response = await apiClient.get<RecordingDetailsResponse>(`/recordings/${recordingId}`);
 
-      return {
+      const result: {
+        status: RecordingStatus;
+        transcript?: {
+          wordCount: number;
+          confidence: number;
+        };
+        error?: string;
+      } = {
         status: response.data?.recording?.status || 'failed',
-        transcript: response.data?.recording?.transcript
-          ? {
-              wordCount: response.data.recording.transcript.wordCount,
-              confidence: response.data.recording.transcript.confidence,
-            }
-          : undefined,
-        error: undefined,
       };
+
+      if (response.data?.recording?.transcript) {
+        result.transcript = {
+          wordCount: response.data.recording.transcript.wordCount,
+          confidence: response.data.recording.transcript.confidence,
+        };
+      }
+
+      return result;
     } catch (error) {
       logger.error(`Failed to check status for recording ${recordingId}`, error as Error);
       return null;

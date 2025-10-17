@@ -294,10 +294,13 @@ export class RecordingService {
       const transcriptions = await this.getTranscriptions({ recordingId, limit: 1 });
 
       if (transcriptions.data && transcriptions.data.length > 0) {
-        return {
-          success: true,
-          data: transcriptions.data[0]
+        const result: ApiResponse<Transcription> = {
+          success: true
         };
+        if (transcriptions.data[0]) {
+          result.data = transcriptions.data[0];
+        }
+        return result;
       } else {
         return {
           success: false,

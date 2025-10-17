@@ -1,7 +1,7 @@
 import { REST, Routes, ChatInputCommandInteraction } from 'discord.js';
 import { ArcaneClient, Command } from './client';
 import { config } from '../utils/config';
-import { logger, logError, logInfo, logDiscordEvent } from '../utils/logger';
+import { logError, logInfo, logDiscordEvent } from '../utils/logger';
 import { pingCommand } from '../commands/ping';
 import { testApiCommand } from '../commands/test-api';
 import { linkCommand } from '../commands/link';

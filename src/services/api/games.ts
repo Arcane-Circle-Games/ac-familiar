@@ -17,6 +17,7 @@ export interface GameCreateData {
 export interface Game {
   id: string;
   title: string;
+  name?: string; // Alternative name field
   description: string;
   shortDescription: string;
   gameType: string;
@@ -30,6 +31,17 @@ export interface Game {
   gmId: string;
   createdAt: string;
   updatedAt: string;
+
+  // Additional properties used by game-info command
+  gameImage?: string;
+  startTime?: string;
+  duration?: number;
+  frequency?: string;
+  minExperience?: string;
+  ageRequirement?: string;
+  contentWarnings?: string[];
+  tags?: string[];
+  requiresApproval?: boolean;
 }
 
 export interface Session {

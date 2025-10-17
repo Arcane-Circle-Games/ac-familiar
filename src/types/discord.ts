@@ -1,4 +1,4 @@
-import { VoiceState, GuildMember, TextChannel, VoiceChannel } from 'discord.js';
+import { GuildMember } from 'discord.js';
 
 export interface DiscordUserInfo {
   id: string;

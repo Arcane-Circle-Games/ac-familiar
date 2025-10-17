@@ -13,6 +13,16 @@ interface NegativeCacheEntry {
   expiry: number;
 }
 
+interface RequestMetadata {
+  startTime: number;
+}
+
+declare module 'axios' {
+  export interface InternalAxiosRequestConfig {
+    metadata?: RequestMetadata;
+  }
+}
+
 export class ArcaneCircleAPIClient {
   private client: AxiosInstance;
   private baseURL: string;
@@ -27,7 +37,7 @@ export class ArcaneCircleAPIClient {
   
   constructor() {
     this.baseURL = config.PLATFORM_API_URL;
-    this.apiKey = undefined; // No API key needed based on documentation
+    // No API key needed based on documentation
     
     this.client = axios.create({
       baseURL: this.baseURL,
@@ -83,7 +93,9 @@ export class ArcaneCircleAPIClient {
     // Response interceptor
     this.client.interceptors.response.use(
       (response: AxiosResponse) => {
-        const duration = Date.now() - response.config.metadata?.startTime;
+        const duration = response.config.metadata?.startTime
+          ? Date.now() - response.config.metadata.startTime
+          : undefined;
         
         logAPICall(
           response.config.method?.toUpperCase() || 'GET',

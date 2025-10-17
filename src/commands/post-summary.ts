@@ -113,6 +113,15 @@ export const postSummaryCommand = {
           const gameId = selectInteraction.values[0];
 
           // Step 6: Get wiki for the selected game
+          if (!gameId) {
+            await interaction.editReply({
+              content: '❌ No game selected.',
+              embeds: [],
+              components: []
+            });
+            return;
+          }
+
           logger.info(`User selected game`, {
             gameId,
             selectedGame: games.find((g: any) => g.id === gameId)?.title || games.find((g: any) => g.id === gameId)?.name
@@ -184,6 +193,14 @@ export const postSummaryCommand = {
             await sessionSelectInteraction.deferUpdate();
 
             const selectedSessionId = sessionSelectInteraction.values[0];
+            if (!selectedSessionId) {
+              await interaction.editReply({
+                content: '❌ No session selected.',
+                embeds: [],
+                components: []
+              });
+              return;
+            }
 
             // Step 10: Format and post the session summary
             logger.info(`Posting session summary to wiki ${wiki.id} for session ${selectedSessionId}`);

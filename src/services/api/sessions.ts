@@ -177,8 +177,8 @@ export class SessionService {
       if (response.data && Array.isArray(response.data)) {
         return response.data;
       }
-      if (response.sessions && Array.isArray(response.sessions)) {
-        return response.sessions;
+      if ('sessions' in response && Array.isArray((response as any).sessions)) {
+        return (response as any).sessions;
       }
 
       return [];

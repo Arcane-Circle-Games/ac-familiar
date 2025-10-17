@@ -35,13 +35,13 @@ export class WikiService {
       logInfo('Wiki API response', {
         fullResponse: JSON.stringify(response, null, 2),
         hasData: !!response.data,
-        hasWiki: !!response.wiki,
+        hasWiki: !!(response as any).wiki,
         hasDataWiki: !!response.data?.wiki
       });
 
       // API returns { wiki: {...} } directly, not wrapped in { data: { wiki: {...} } }
-      if (response.wiki) {
-        return response.wiki;
+      if ('wiki' in response && (response as any).wiki) {
+        return (response as any).wiki;
       }
 
       // Fallback to nested structure in case API changes
