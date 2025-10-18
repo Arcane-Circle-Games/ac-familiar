@@ -185,19 +185,35 @@ export class RecordingUploadService {
           url: urlInfo.uploadUrl.substring(0, 50) + '...',
         });
 
-        // Upload to pre-signed URL using axios (not apiClient, since this goes to Blob Storage)
-        await axios.put(urlInfo.uploadUrl, fileBuffer, {
+        // Upload to proxy endpoint (which forwards to Vercel Blob Storage)
+        const uploadResponse = await axios.put(urlInfo.uploadUrl, fileBuffer, {
           headers: {
             'Content-Type': 'audio/wav',
-            'x-ms-blob-type': 'BlockBlob', // Required for Azure Blob Storage
+            'x-ms-blob-type': 'BlockBlob', // Required for Azure Blob Storage (legacy header, kept for compatibility)
           },
           maxBodyLength: Infinity,
           maxContentLength: Infinity,
           timeout: 300000, // 5 minutes
         });
 
-        // Extract blob URL from upload URL (remove query parameters)
-        const blobUrl = urlInfo.uploadUrl.split('?')[0] || urlInfo.uploadUrl;
+        // Extract actual Vercel Blob URL from proxy response
+        // API should return { url: "https://...blob.vercel-storage.com/..." }
+        let blobUrl: string;
+        if (uploadResponse.data && (uploadResponse.data.url || uploadResponse.data.blobUrl)) {
+          blobUrl = uploadResponse.data.url || uploadResponse.data.blobUrl;
+          logger.debug(`Received blob URL from upload response`, {
+            fileIndex: urlInfo.fileIndex,
+            blobUrl: blobUrl.substring(0, 60) + '...',
+          });
+        } else {
+          // Fallback: try to extract from upload URL (for direct blob storage uploads)
+          blobUrl = urlInfo.uploadUrl.split('?')[0] || urlInfo.uploadUrl;
+          logger.warn(`No blob URL in upload response, using upload URL as fallback`, {
+            fileIndex: urlInfo.fileIndex,
+            uploadUrl: urlInfo.uploadUrl.substring(0, 60) + '...',
+            responseData: uploadResponse.data,
+          });
+        }
 
         uploadedFiles.push({
           fileIndex: urlInfo.fileIndex,
