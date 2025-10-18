@@ -24,6 +24,74 @@ export interface RecordingUploadRequest {
   files: File[] | Buffer[]; // Audio files (WAV)
 }
 
+// Two-step upload flow types matching API schema
+export interface RecordingSegment {
+  userId: string;
+  username: string;
+  segmentIndex: number;
+  fileName: string;
+  absoluteStartTime: number; // Unix timestamp in ms
+  absoluteEndTime: number; // Unix timestamp in ms
+  duration: number; // Duration in ms
+  fileSize: number; // Size in bytes
+  format: string; // 'wav', 'flac', 'mp3'
+}
+
+export interface RecordingUploadInitRequest {
+  sessionId: string;
+  guildId: string;
+  guildName: string;
+  channelId: string;
+  userId: string; // User who started recording
+  recordedAt: string; // ISO datetime string
+  sessionStartTime: number; // Unix timestamp in ms
+  sessionEndTime: number; // Unix timestamp in ms
+  duration: number; // Duration in ms
+  participantCount: number;
+  totalSize: number; // Total size in bytes
+  format: 'segmented' | 'single';
+  segments: RecordingSegment[];
+}
+
+export interface RecordingUploadUrl {
+  fileIndex: number;
+  uploadUrl: string; // Pre-signed Vercel Blob upload URL
+  blobPath: string; // Full blob path: "{sessionId}/{username}/segment_000.wav"
+}
+
+export interface RecordingUploadInitResponse {
+  success: true;
+  recordingId: string; // Database ID for the recording
+  uploadUrls: RecordingUploadUrl[];
+}
+
+export interface RecordingUploadedFile {
+  fileIndex: number;
+  blobUrl: string; // Full blob URL after upload
+  userId: string; // Discord user ID
+  username: string;
+  fileName: string;
+  filePath: string; // Relative path: "username/segment_000.wav"
+}
+
+export interface RecordingUploadCompleteRequest {
+  files: RecordingUploadedFile[]; // Detailed file information with blob URLs
+}
+
+export interface RecordingUploadCompleteResponse {
+  success: true;
+  recording: {
+    id: string;
+    sessionId: string;
+    status: RecordingStatus;
+    downloadUrls: {
+      audio: string[];
+    };
+    viewUrl: string;
+    estimatedProcessingTime: string;
+  };
+}
+
 export interface RecordingUploadResponse {
   success: true;
   recording: {

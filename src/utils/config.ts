@@ -44,6 +44,9 @@ const configSchema = z.object({
   RECORDING_AUTO_UPLOAD: z.coerce.boolean().default(false),
   RECORDING_KEEP_LOCAL_AFTER_UPLOAD: z.coerce.boolean().default(false),
 
+  // Audio Processing Configuration
+  AUDIO_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(10),
+
   // Segment-Based Recording Configuration
   RECORDING_SILENCE_THRESHOLD: z.coerce.number().min(500).max(10000).default(2000), // ms
   RECORDING_MIN_SEGMENT_DURATION: z.coerce.number().min(100).max(5000).default(500), // ms

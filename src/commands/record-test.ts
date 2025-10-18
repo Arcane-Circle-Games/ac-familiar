@@ -8,15 +8,73 @@ import {
 } from 'discord.js';
 import { RecordingManager } from '../services/recording/RecordingManager';
 import { logger } from '../utils/logger';
-import { config } from '../utils/config';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
 import { recordingUploadService } from '../services/upload/RecordingUploadService';
 import { recordingService } from '../services/api/recordings';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-// Singleton instance
-const recordingManager = new RecordingManager();
+/**
+ * Calculate duration from WAV file by reading header
+ */
+async function getWAVDuration(filePath: string): Promise<number> {
+  try {
+    const buffer = await fs.readFile(filePath);
+
+    // WAV file header structure:
+    // Bytes 0-3: "RIFF"
+    // Bytes 4-7: File size - 8
+    // Bytes 8-11: "WAVE"
+    // Bytes 12-15: "fmt "
+    // Bytes 16-19: Format chunk size (16 for PCM)
+    // Bytes 20-21: Audio format (1 for PCM)
+    // Bytes 22-23: Number of channels
+    // Bytes 24-27: Sample rate
+    // Bytes 28-31: Byte rate
+    // Bytes 32-33: Block align
+    // Bytes 34-35: Bits per sample
+
+    if (buffer.length < 44) {
+      logger.warn('WAV file too small to read header', { filePath });
+      return 0;
+    }
+
+    // Verify RIFF and WAVE headers
+    const riff = buffer.toString('ascii', 0, 4);
+    const wave = buffer.toString('ascii', 8, 12);
+
+    if (riff !== 'RIFF' || wave !== 'WAVE') {
+      logger.warn('Invalid WAV file format', { filePath, riff, wave });
+      return 0;
+    }
+
+    const byteRate = buffer.readUInt32LE(28);
+
+    // Find data chunk
+    let offset = 12;
+    while (offset < buffer.length - 8) {
+      const chunkId = buffer.toString('ascii', offset, offset + 4);
+      const chunkSize = buffer.readUInt32LE(offset + 4);
+
+      if (chunkId === 'data') {
+        // Duration = data size / byte rate (in milliseconds)
+        const durationMs = Math.round((chunkSize / byteRate) * 1000);
+        return durationMs;
+      }
+
+      offset += 8 + chunkSize;
+    }
+
+    logger.warn('No data chunk found in WAV file', { filePath });
+    return 0;
+  } catch (error) {
+    logger.error('Failed to calculate WAV duration', error as Error, { filePath });
+    return 0;
+  }
+}
+
+// Singleton instance - exported for bot startup cleanup
+export const recordingManager = new RecordingManager();
 
 export const recordTestCommand = {
   name: 'record-test',
@@ -113,7 +171,7 @@ export const recordTestCommand = {
           {
             const chatInteraction = interaction as ChatInputCommandInteraction;
             const shouldUpload = chatInteraction.options.getBoolean('upload') ?? false;
-            const shouldTranscribe = chatInteraction.options.getBoolean('transcribe') ?? config.RECORDING_AUTO_TRANSCRIBE;
+            const shouldTranscribe = chatInteraction.options.getBoolean('transcribe') ?? false;
             await handleStopRecording(interaction, voiceChannel, member, true, shouldTranscribe, shouldUpload);
           }
           break;
@@ -526,23 +584,94 @@ async function handleUpload(interaction: CommandInteraction): Promise<void> {
     const manifestContent = await fs.readFile(manifestPath, 'utf-8');
     const manifest = JSON.parse(manifestContent);
 
-    // Build ExportedRecording object from manifest
+    // Build ExportedRecording object from manifest, filtering out missing files
+    const allTracks = manifest.segments.map((seg: any) => ({
+      // Use filePath if available (from recovery script), otherwise build from fileName
+      filePath: seg.filePath
+        ? path.join(sessionPath, seg.filePath)
+        : path.join(sessionPath, seg.fileName),
+      fileSize: seg.fileSize,
+      format: seg.format || 'wav',
+      metadata: {
+        userId: seg.userId,
+        username: seg.username,
+        segmentIndex: seg.segmentIndex,
+        startTime: seg.absoluteStartTime,
+        endTime: seg.absoluteEndTime,
+        duration: seg.duration,
+        sampleRate: 48000, // Discord default
+        channels: 2 // Discord default
+      }
+    }));
+
+    // Filter out tracks where the file doesn't exist
+    const existingTracks = [];
+    const missingTracks = [];
+
+    for (const track of allTracks) {
+      try {
+        await fs.access(track.filePath);
+        existingTracks.push(track);
+      } catch {
+        missingTracks.push(track);
+        logger.warn(`Skipping missing file: ${path.basename(track.filePath)}`, {
+          userId: track.metadata.userId,
+          username: track.metadata.username,
+          segmentIndex: track.metadata.segmentIndex
+        });
+      }
+    }
+
+    if (existingTracks.length === 0) {
+      await interaction.editReply({
+        content: `❌ **No audio files found for session ${sessionId}**`
+      });
+      return;
+    }
+
+    if (missingTracks.length > 0) {
+      logger.warn(`Found ${missingTracks.length} missing files out of ${allTracks.length} total`, {
+        sessionId: manifest.sessionId
+      });
+    }
+
+    // Recalculate total size and durations based on existing files
+    let actualTotalSize = 0;
+    for (const track of existingTracks) {
+      try {
+        const stats = await fs.stat(track.filePath);
+        actualTotalSize += stats.size;
+        track.fileSize = stats.size; // Update with actual size
+
+        // Calculate duration from WAV file if not set or is 0
+        if (!track.metadata.duration || track.metadata.duration === 0) {
+          const durationMs = await getWAVDuration(track.filePath);
+          track.metadata.duration = durationMs;
+
+          // Update endTime based on duration if needed
+          if (track.metadata.endTime === track.metadata.startTime) {
+            track.metadata.endTime = track.metadata.startTime + durationMs;
+          }
+        }
+      } catch (error) {
+        logger.warn(`Failed to get file info for ${path.basename(track.filePath)}`, {
+          error: error instanceof Error ? error.message : 'unknown'
+        });
+      }
+    }
+
     const exportedRecording = {
       sessionId: manifest.sessionId,
       sessionStartTime: manifest.sessionStartTime,
       sessionEndTime: manifest.sessionEndTime,
-      tracks: manifest.segments.map((seg: any) => ({
-        filePath: path.join(sessionPath, seg.fileName),
-        metadata: {
-          userId: seg.userId,
-          username: seg.username,
-          segmentIndex: seg.segmentIndex
-        }
-      })),
+      tracks: existingTracks,
       outputDirectory: sessionPath,
-      totalSize: manifest.totalSize,
-      participantCount: manifest.participantCount
+      totalSize: actualTotalSize,
+      participantCount: new Set(existingTracks.map(t => t.metadata.userId)).size
     };
+
+    // Calculate total session duration
+    const sessionDuration = manifest.sessionEndTime - manifest.sessionStartTime;
 
     // Build upload metadata
     const metadata = {
@@ -551,7 +680,7 @@ async function handleUpload(interaction: CommandInteraction): Promise<void> {
       guildName: interaction.guild!.name,
       channelId: member.voice.channel?.id || 'unknown',
       userId: member.id,
-      duration: manifest.duration,
+      duration: sessionDuration,
       recordedAt: new Date(manifest.sessionStartTime).toISOString(),
       participants: manifest.segments.map((seg: any) => ({
         userId: seg.userId,
@@ -561,7 +690,9 @@ async function handleUpload(interaction: CommandInteraction): Promise<void> {
 
     const progressEmbed = new EmbedBuilder()
       .setTitle('📤 Uploading...')
-      .setDescription(`Uploading session \`${sessionId}\` to API...`)
+      .setDescription(`Uploading session \`${sessionId}\` to API...\n\n` +
+        `**Files:** ${existingTracks.length} segments` +
+        (missingTracks.length > 0 ? `\n⚠️ Skipped ${missingTracks.length} missing files` : ''))
       .setColor(0xffaa00)
       .setTimestamp();
 
@@ -573,13 +704,14 @@ async function handleUpload(interaction: CommandInteraction): Promise<void> {
     if (result.success) {
       const successEmbed = new EmbedBuilder()
         .setTitle('✅ Upload Successful')
-        .setDescription(`Session uploaded to API`)
+        .setDescription(`Session uploaded to API` +
+          (missingTracks.length > 0 ? `\n\n⚠️ **Note:** ${missingTracks.length} files were missing and skipped` : ''))
         .setColor(0x00ff00)
         .addFields(
           { name: 'Recording ID', value: result.recordingId || 'N/A', inline: false },
           { name: 'Status', value: 'Upload complete', inline: true },
           { name: 'Processing Time', value: result.estimatedProcessingTime || 'N/A', inline: true },
-          { name: 'Audio Files', value: result.downloadUrls?.audio.length.toString() || '0', inline: true }
+          { name: 'Audio Files', value: `${existingTracks.length} uploaded`, inline: true }
         )
         .setTimestamp();
 

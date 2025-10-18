@@ -8,7 +8,7 @@ import { linkCommand } from '../commands/link';
 import { gamesCommand } from '../commands/games';
 import { gameInfoCommand, gameInfoCommandData } from '../commands/game-info';
 import { gmCommand } from '../commands/gm';
-import { recordTestCommand } from '../commands/record-test';
+import { recordTestCommand, recordingManager } from '../commands/record-test';
 import { postSummaryCommand } from '../commands/post-summary';
 import { testSummaryCommand } from '../commands/test-summary';
 
@@ -141,19 +141,23 @@ export class ArcaneBot {
   
   public async start(): Promise<void> {
     try {
+      // Clean up orphaned PCM files from previous crashed sessions
+      logInfo('🧹 Cleaning up orphaned PCM files...');
+      await recordingManager.cleanupOrphanedPCMFiles('./recordings');
+
       // Start the Discord client
       await this.client.start();
-      
+
       // Wait for the client to be ready
       await new Promise<void>((resolve) => {
         this.client.once('ready', () => resolve());
       });
-      
+
       // Register slash commands
       await this.registerCommands();
-      
+
       logInfo('🎉 Arcane Circle Discord Bot is online!');
-      
+
     } catch (error) {
       logError('Failed to start bot', error as Error);
       throw error;

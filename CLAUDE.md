@@ -96,6 +96,17 @@ Commands are registered in `src/bot/index.ts` in the `loadCommands()` method.
 - Integration with platform API to store recordings and transcriptions
 - Session tracking with UUIDs
 
+**Upload Architecture** (`RecordingUploadService.ts`):
+- **Current Implementation (Tech Debt)**: Files upload via API proxy (bot → API → Vercel Blob)
+  - Three-step process: init → upload files → complete
+  - Bot sends files to API endpoints, API forwards to Vercel Blob Storage
+  - Performance cost: double bandwidth, API processes all file data
+- **Future Optimization**: Direct upload using Vercel Blob client tokens
+  - API generates client tokens, bot uses `@vercel/blob` SDK
+  - Direct path: bot → Vercel Blob (no proxy)
+  - Would eliminate bandwidth overhead and improve upload speeds
+  - See tech debt comments in `RecordingUploadService.ts:127-146` for migration plan
+
 **Transcription System**:
 The bot supports dual-tier transcription:
 - **Free Tier**: Users transcribe on platform using WebAssembly Whisper (browser-based, free compute)

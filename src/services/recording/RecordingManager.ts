@@ -8,6 +8,8 @@ import { SessionTranscript } from '../../types/transcription';
 import { recordingUploadService, UploadResult } from '../upload/RecordingUploadService';
 import { RecordingUploadMetadata } from '../../types/recording-api';
 import { config } from '../../utils/config';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 interface ActiveSession {
   sessionId: string;
@@ -371,6 +373,80 @@ export class RecordingManager {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown upload error',
       };
+    }
+  }
+
+  /**
+   * Clean up orphaned PCM files from crashed sessions
+   * Should be called on bot startup to prevent accumulation of temp files
+   */
+  async cleanupOrphanedPCMFiles(recordingsDir: string = './recordings'): Promise<void> {
+    try {
+      logger.info('Checking for orphaned PCM files', { recordingsDir });
+
+      // Check if recordings directory exists
+      try {
+        await fs.access(recordingsDir);
+      } catch {
+        logger.info('Recordings directory does not exist, skipping cleanup', { recordingsDir });
+        return;
+      }
+
+      // Find all PCM files in recordings directory and subdirectories
+      const orphanedFiles: string[] = [];
+
+      const scanDirectory = async (dir: string): Promise<void> => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+
+          if (entry.isDirectory()) {
+            // Recursively scan subdirectories
+            await scanDirectory(fullPath);
+          } else if (entry.isFile() && entry.name.startsWith('temp_') && entry.name.endsWith('.pcm')) {
+            // Found an orphaned PCM file
+            orphanedFiles.push(fullPath);
+          }
+        }
+      };
+
+      await scanDirectory(recordingsDir);
+
+      if (orphanedFiles.length === 0) {
+        logger.info('No orphaned PCM files found');
+        return;
+      }
+
+      logger.warn(`Found ${orphanedFiles.length} orphaned PCM files, cleaning up`, {
+        sampleFiles: orphanedFiles.slice(0, 5).map(f => path.basename(f))
+      });
+
+      // Delete all orphaned PCM files
+      let deletedCount = 0;
+      let failedCount = 0;
+
+      for (const filePath of orphanedFiles) {
+        try {
+          await fs.unlink(filePath);
+          deletedCount++;
+          logger.debug('Deleted orphaned PCM file', { filePath: path.basename(filePath) });
+        } catch (error) {
+          failedCount++;
+          logger.error('Failed to delete orphaned PCM file', error as Error, {
+            filePath: path.basename(filePath)
+          });
+        }
+      }
+
+      logger.info('Orphaned PCM cleanup completed', {
+        totalFound: orphanedFiles.length,
+        deleted: deletedCount,
+        failed: failedCount
+      });
+    } catch (error) {
+      logger.error('Failed to cleanup orphaned PCM files', error as Error);
+      // Don't throw - cleanup failure shouldn't prevent bot startup
     }
   }
 

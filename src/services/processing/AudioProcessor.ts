@@ -3,6 +3,7 @@ import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { logger } from '../../utils/logger';
+import { config } from '../../utils/config';
 
 // Set ffmpeg path
 if (ffmpegStatic) {
@@ -251,7 +252,8 @@ export class AudioProcessor {
   }
 
   /**
-   * Process multiple user tracks/segments in parallel
+   * Process multiple user tracks/segments in batches
+   * Prevents memory exhaustion when processing many segments concurrently
    */
   async processMultipleTracks(
     userTracks: Array<{
@@ -264,40 +266,70 @@ export class AudioProcessor {
     }>,
     options: AudioProcessingOptions = {}
   ): Promise<ProcessedAudioTrack[]> {
-    logger.info('Processing multiple audio tracks', {
+    const batchSize = config.AUDIO_BATCH_SIZE;
+
+    logger.info('Processing multiple audio tracks in batches', {
       trackCount: userTracks.length,
+      batchSize,
       format: options.format || 'wav'
     });
 
-    const processingPromises = userTracks.map(track => {
-      const metadata: Omit<AudioTrackMetadata, 'duration'> = {
-        userId: track.userId,
-        username: track.username,
-        startTime: track.startTime,
-        endTime: track.endTime,
-        sampleRate: this.DEFAULT_SAMPLE_RATE,
-        channels: this.DEFAULT_CHANNELS
-      };
+    const results: ProcessedAudioTrack[] = [];
 
-      // Only add segmentIndex if present
-      if (track.segmentIndex !== undefined) {
-        metadata.segmentIndex = track.segmentIndex;
+    // Process tracks in batches
+    for (let i = 0; i < userTracks.length; i += batchSize) {
+      const batch = userTracks.slice(i, i + batchSize);
+      const batchNumber = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(userTracks.length / batchSize);
+
+      logger.info(`Processing batch ${batchNumber}/${totalBatches}`, {
+        batchSize: batch.length,
+        tracksProcessed: i,
+        tracksRemaining: userTracks.length - i
+      });
+
+      const processingPromises = batch.map(track => {
+        const metadata: Omit<AudioTrackMetadata, 'duration'> = {
+          userId: track.userId,
+          username: track.username,
+          startTime: track.startTime,
+          endTime: track.endTime,
+          sampleRate: this.DEFAULT_SAMPLE_RATE,
+          channels: this.DEFAULT_CHANNELS
+        };
+
+        // Only add segmentIndex if present
+        if (track.segmentIndex !== undefined) {
+          metadata.segmentIndex = track.segmentIndex;
+        }
+
+        return this.convertPCMToWAV(track.bufferChunks, metadata, options);
+      });
+
+      try {
+        const batchResults = await Promise.all(processingPromises);
+        results.push(...batchResults);
+
+        logger.info(`Batch ${batchNumber}/${totalBatches} completed successfully`, {
+          batchTracksProcessed: batchResults.length,
+          totalTracksProcessed: results.length,
+          batchTotalSize: batchResults.reduce((sum, track) => sum + track.fileSize, 0)
+        });
+      } catch (error) {
+        logger.error(`Failed to process batch ${batchNumber}/${totalBatches}`, error as Error, {
+          batchStartIndex: i,
+          batchSize: batch.length
+        });
+        throw error;
       }
+    }
 
-      return this.convertPCMToWAV(track.bufferChunks, metadata, options);
+    logger.info('All audio tracks processed successfully', {
+      trackCount: results.length,
+      totalSize: results.reduce((sum, track) => sum + track.fileSize, 0)
     });
 
-    try {
-      const results = await Promise.all(processingPromises);
-      logger.info('All audio tracks processed successfully', {
-        trackCount: results.length,
-        totalSize: results.reduce((sum, track) => sum + track.fileSize, 0)
-      });
-      return results;
-    } catch (error) {
-      logger.error('Failed to process multiple tracks', error as Error);
-      throw error;
-    }
+    return results;
   }
 
   /**

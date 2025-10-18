@@ -17,7 +17,13 @@
       "Bash(npx tsc:*)",
       "Bash(npm run commands:clear:*)",
       "Bash(tee:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Read(//Users/mcarmody/Documents/ac-mvp/src/app/api/recordings/[id]/**)",
+      "Read(//Users/mcarmody/Documents/ac-mvp/src/app/api/webhooks/[id]/**)",
+      "Read(//Users/mcarmody/Documents/ac-mvp/src/app/**)",
+      "Read(//Users/mcarmody/Documents/ac-mvp/src/**)",
+      "Read(//Users/mcarmody/Documents/ac-mvp/**)",
+      "Bash(node -e \"\nconst track = {\n  metadata: {\n    userId: ''123'',\n    username: ''test'',\n    startTime: 1000,\n    endTime: 2000,\n    duration: 1000,\n    sampleRate: 48000,\n    channels: 2,\n    segmentIndex: 0\n  },\n  filePath: ''/path/to/file.wav'',\n  fileSize: 1024,\n  format: ''wav''\n};\n\nconsole.log(''Available fields:'');\nconsole.log(''metadata.startTime:'', track.metadata.startTime);\nconsole.log(''metadata.endTime:'', track.metadata.endTime);\nconsole.log(''metadata.duration:'', track.metadata.duration);\nconsole.log(''format:'', track.format);\n\")"
     ],
     "deny": [],
     "ask": []

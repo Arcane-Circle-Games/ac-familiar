@@ -1,13 +1,19 @@
-import FormData from 'form-data';
 import * as fs from 'fs';
+import * as path from 'path';
+import axios from 'axios';
 import { apiClient } from '../api/client';
 import { logger } from '../../utils/logger';
 import { ExportedRecording } from '../processing/MultiTrackExporter';
 import {
   RecordingUploadMetadata,
-  RecordingUploadResponse,
   RecordingDetailsResponse,
   RecordingStatus,
+  RecordingUploadInitRequest,
+  RecordingUploadInitResponse,
+  RecordingUploadCompleteRequest,
+  RecordingUploadCompleteResponse,
+  RecordingUploadedFile,
+  RecordingSegment,
 } from '../../types/recording-api';
 
 // Re-export for backward compatibility
@@ -37,7 +43,242 @@ export type UploadProgressCallback = (progress: UploadProgress) => void;
 
 export class RecordingUploadService {
   /**
-   * Upload recording to platform API
+   * Step 1: Initialize upload and get pre-signed URLs from API
+   */
+  private async initializeUpload(
+    exportedRecording: ExportedRecording,
+    metadata: RecordingUploadMetadata
+  ): Promise<RecordingUploadInitResponse> {
+    try {
+      logger.info(`Initializing upload for session ${metadata.sessionId}`, {
+        trackCount: exportedRecording.tracks.length,
+      });
+
+      // Build segments array matching API schema
+      const segments: RecordingSegment[] = [];
+
+      for (const track of exportedRecording.tracks) {
+        const stats = await fs.promises.stat(track.filePath);
+        const fileName = path.basename(track.filePath);
+
+        // Debug: log actual track structure
+        console.log('=== TRACK STRUCTURE ===');
+        console.log('Track:', JSON.stringify(track, null, 2));
+        console.log('Metadata keys:', Object.keys(track.metadata));
+        console.log('Track keys:', Object.keys(track));
+        console.log('=======================');
+
+        segments.push({
+          userId: track.metadata.userId,
+          username: track.metadata.username,
+          segmentIndex: track.metadata.segmentIndex ?? 0,
+          fileName,
+          absoluteStartTime: track.metadata.startTime,
+          absoluteEndTime: track.metadata.endTime,
+          duration: track.metadata.duration,
+          fileSize: stats.size,
+          format: track.format,
+        });
+      }
+
+      // Build request matching API schema exactly
+      const request: RecordingUploadInitRequest = {
+        sessionId: metadata.sessionId,
+        guildId: metadata.guildId,
+        guildName: metadata.guildName,
+        channelId: metadata.channelId,
+        userId: metadata.userId,
+        recordedAt: metadata.recordedAt,
+        sessionStartTime: exportedRecording.sessionStartTime,
+        sessionEndTime: exportedRecording.sessionEndTime,
+        duration: metadata.duration,
+        participantCount: exportedRecording.participantCount,
+        totalSize: exportedRecording.totalSize,
+        format: 'segmented',
+        segments,
+      };
+
+      logger.debug('Sending init request with metadata:', {
+        sessionId: request.sessionId,
+        segmentCount: segments.length,
+        totalSize: `${(request.totalSize / 1024 / 1024).toFixed(2)}MB`,
+      });
+
+      const response = await apiClient.post<RecordingUploadInitResponse>(
+        '/recordings/init',
+        request
+      );
+
+      if (!response.data) {
+        throw new Error('No data in init upload response');
+      }
+
+      logger.info(`Upload initialized with recording ID: ${response.data.recordingId}`, {
+        uploadUrlCount: response.data.uploadUrls.length,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      logger.error(`Failed to initialize upload for session ${metadata.sessionId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Step 2: Upload files to Blob Storage via API proxy
+   *
+   * TECH DEBT / TODO:
+   * Currently uploads go through the API server as a proxy (bot → API → Vercel Blob).
+   * This works but has performance implications:
+   * - Double bandwidth usage (files uploaded twice)
+   * - API server processes all file data
+   * - Slower upload times for users
+   *
+   * FUTURE OPTIMIZATION:
+   * Migrate to direct uploads using Vercel Blob client tokens:
+   * 1. API generates client tokens via generateClientTokenFromReadWriteToken()
+   * 2. Bot uses @vercel/blob SDK instead of axios PUT
+   * 3. Files upload directly: bot → Vercel Blob (no proxy)
+   * 4. Remove proxy endpoints from API server
+   *
+   * This would significantly improve upload performance and reduce API server load.
+   * The current approach was chosen to avoid changing bot upload logic initially.
+   */
+  private async uploadFilesToBlobStorage(
+    exportedRecording: ExportedRecording,
+    uploadUrls: Array<{ fileIndex: number; uploadUrl: string; blobPath: string }>,
+    onProgress?: UploadProgressCallback
+  ): Promise<RecordingUploadedFile[]> {
+    try {
+      logger.info(`Uploading ${uploadUrls.length} files to Blob Storage`);
+
+      const uploadedFiles: RecordingUploadedFile[] = [];
+      let totalBytes = 0;
+      let uploadedBytes = 0;
+
+      // Calculate total size for progress tracking
+      const fileSizes: number[] = [];
+      for (const track of exportedRecording.tracks) {
+        const stats = await fs.promises.stat(track.filePath);
+        fileSizes.push(stats.size);
+        totalBytes += stats.size;
+      }
+
+      // Upload each file to its pre-signed URL
+      for (const urlInfo of uploadUrls) {
+        const track = exportedRecording.tracks[urlInfo.fileIndex];
+        if (!track) {
+          throw new Error(`Track not found for file index ${urlInfo.fileIndex}`);
+        }
+
+        const fileBuffer = await fs.promises.readFile(track.filePath);
+        const fileSize = fileSizes[urlInfo.fileIndex] || 0;
+
+        // Extract relative path from outputDirectory
+        const relativePath = path.relative(exportedRecording.outputDirectory, track.filePath);
+        const fileName = path.basename(track.filePath);
+
+        logger.debug(`Uploading file ${urlInfo.fileIndex} to Blob Storage`, {
+          fileName,
+          size: fileSize,
+          blobPath: urlInfo.blobPath,
+          url: urlInfo.uploadUrl.substring(0, 50) + '...',
+        });
+
+        // Upload to pre-signed URL using axios (not apiClient, since this goes to Blob Storage)
+        await axios.put(urlInfo.uploadUrl, fileBuffer, {
+          headers: {
+            'Content-Type': 'audio/wav',
+            'x-ms-blob-type': 'BlockBlob', // Required for Azure Blob Storage
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          timeout: 300000, // 5 minutes
+        });
+
+        // Extract blob URL from upload URL (remove query parameters)
+        const blobUrl = urlInfo.uploadUrl.split('?')[0] || urlInfo.uploadUrl;
+
+        uploadedFiles.push({
+          fileIndex: urlInfo.fileIndex,
+          blobUrl,
+          userId: track.metadata.userId,
+          username: track.metadata.username,
+          fileName,
+          filePath: relativePath.replace(/\\/g, '/'), // Normalize to forward slashes
+        });
+
+        uploadedBytes += fileSize;
+
+        logger.info(`File ${urlInfo.fileIndex} uploaded successfully`, {
+          fileName,
+          blobPath: urlInfo.blobPath,
+          blobUrl: blobUrl.substring(0, 50) + '...',
+        });
+
+        if (onProgress) {
+          onProgress({
+            uploadedBytes,
+            totalBytes,
+            percentage: Math.round((uploadedBytes / totalBytes) * 100),
+            currentFile: fileName,
+            currentFileIndex: urlInfo.fileIndex,
+            totalFiles: uploadUrls.length,
+          });
+        }
+      }
+
+      logger.info(`All ${uploadUrls.length} files uploaded to Blob Storage successfully`);
+      return uploadedFiles;
+    } catch (error: any) {
+      logger.error('Failed to upload files to Blob Storage', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Step 3: Complete the upload by notifying the API with blob URLs
+   */
+  private async completeUpload(
+    recordingId: string,
+    uploadedFiles: RecordingUploadedFile[]
+  ): Promise<RecordingUploadCompleteResponse> {
+    try {
+      logger.info(`Completing upload for recording ${recordingId}`, {
+        fileCount: uploadedFiles.length,
+      });
+
+      const request: RecordingUploadCompleteRequest = {
+        files: uploadedFiles,
+      };
+
+      logger.debug('Sending complete request with file structure:', {
+        fileCount: uploadedFiles.length,
+        sampleFiles: uploadedFiles.slice(0, 3).map(f => ({
+          filePath: f.filePath,
+          username: f.username,
+        })),
+      });
+
+      const response = await apiClient.post<RecordingUploadCompleteResponse>(
+        `/recordings/${recordingId}/complete`,
+        request
+      );
+
+      if (!response.data) {
+        throw new Error('No data in complete upload response');
+      }
+
+      logger.info(`Upload completed successfully for recording ${recordingId}`);
+      return response.data;
+    } catch (error: any) {
+      logger.error(`Failed to complete upload for recording ${recordingId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload recording to platform API using two-step flow
    */
   async uploadRecording(
     exportedRecording: ExportedRecording,
@@ -45,105 +286,38 @@ export class RecordingUploadService {
     onProgress?: UploadProgressCallback
   ): Promise<UploadResult> {
     try {
-      logger.info(`Starting upload for session ${metadata.sessionId}`, {
+      logger.info(`Starting two-step upload for session ${metadata.sessionId}`, {
         trackCount: exportedRecording.tracks.length,
       });
 
-      // Create form data
-      const form = new FormData();
-
-      // Add metadata as JSON
-      form.append('metadata', JSON.stringify(metadata));
-
-      // Calculate total size for progress tracking
-      let totalBytes = 0;
-      const fileSizes: number[] = [];
-
-      for (const track of exportedRecording.tracks) {
-        const stats = await fs.promises.stat(track.filePath);
-        fileSizes.push(stats.size);
-        totalBytes += stats.size;
-      }
-
-      // Add audio files
-      let uploadedBytes = 0;
-      for (let i = 0; i < exportedRecording.tracks.length; i++) {
-        const track = exportedRecording.tracks[i];
-        if (!track) continue;
-
-        const fileStream = fs.createReadStream(track.filePath);
-        const filename = track.filePath.split('/').pop() || 'audio.wav';
-
-        form.append(`file${i}`, fileStream, {
-          filename,
-          contentType: 'audio/wav',
-        });
-
-        const fileSize = fileSizes[i] || 0;
-        logger.debug(`Added file to upload: ${filename}`, {
-          size: fileSize,
-        });
-
-        uploadedBytes += fileSize;
-
-        if (onProgress) {
-          onProgress({
-            uploadedBytes,
-            totalBytes,
-            percentage: Math.round((uploadedBytes / totalBytes) * 100),
-            currentFile: filename,
-            currentFileIndex: i,
-            totalFiles: exportedRecording.tracks.length,
-          });
-        }
-      }
-
-      // Upload to API
       const startTime = Date.now();
-      const response = await apiClient.post<RecordingUploadResponse>('/recordings', form, {
-        headers: {
-          ...form.getHeaders(),
-        },
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-        timeout: 300000, // 5 minutes
-      });
+
+      // Step 1: Initialize upload and get pre-signed URLs
+      const initResponse = await this.initializeUpload(exportedRecording, metadata);
+
+      // Step 2: Upload files directly to Blob Storage
+      const uploadedFiles = await this.uploadFilesToBlobStorage(
+        exportedRecording,
+        initResponse.uploadUrls,
+        onProgress
+      );
+
+      // Step 3: Complete the upload
+      const completeResponse = await this.completeUpload(initResponse.recordingId, uploadedFiles);
 
       const uploadDuration = Date.now() - startTime;
 
-      // Log the full response to debug structure
-      logger.info(`Upload completed in ${uploadDuration}ms - Full response:`, {
+      logger.info(`Upload completed in ${uploadDuration}ms`, {
         sessionId: metadata.sessionId,
-        responseData: JSON.stringify(response.data, null, 2),
-        responseType: typeof response.data,
-        hasData: !!response.data
+        recordingId: completeResponse.recording.id,
       });
-
-      // Handle response - platform may return different formats
-      const recording = response.data?.recording || response.data;
-
-      logger.info(`Parsed recording object:`, {
-        sessionId: metadata.sessionId,
-        recordingId: (recording as any)?.id || 'unknown',
-        recordingKeys: recording ? Object.keys(recording) : 'none',
-        responseStructure: response.data ? Object.keys(response.data) : 'none'
-      });
-
-      if (!recording) {
-        logger.warn('Upload succeeded but response has unexpected format', {
-          responseData: response.data
-        });
-        return {
-          success: true,
-        };
-      }
 
       return {
         success: true,
-        recordingId: (recording as any).id,
-        downloadUrls: (recording as any).downloadUrls,
-        viewUrl: (recording as any).viewUrl,
-        estimatedProcessingTime: (recording as any).estimatedProcessingTime,
+        recordingId: completeResponse.recording.id,
+        downloadUrls: completeResponse.recording.downloadUrls,
+        viewUrl: completeResponse.recording.viewUrl,
+        estimatedProcessingTime: completeResponse.recording.estimatedProcessingTime,
       };
     } catch (error: any) {
       logger.error(`Upload failed for session ${metadata.sessionId}`, error as Error);
