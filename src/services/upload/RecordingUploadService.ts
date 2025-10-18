@@ -231,7 +231,22 @@ export class RecordingUploadService {
       logger.info(`All ${uploadUrls.length} files uploaded to Blob Storage successfully`);
       return uploadedFiles;
     } catch (error: any) {
-      logger.error('Failed to upload files to Blob Storage', error);
+      // Extract useful error info without circular references
+      const errorInfo: Record<string, any> = {
+        message: error.message,
+        code: error.code,
+      };
+
+      if (error.response) {
+        errorInfo.status = error.response.status;
+        errorInfo.statusText = error.response.statusText;
+        errorInfo.responseData = error.response.data;
+      } else if (error.request) {
+        errorInfo.requestFailed = true;
+        errorInfo.noResponse = true;
+      }
+
+      logger.error('Failed to upload files to Blob Storage', error as Error, errorInfo);
       throw error;
     }
   }

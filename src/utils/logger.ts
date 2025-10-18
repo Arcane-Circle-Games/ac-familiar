@@ -1,17 +1,40 @@
 import winston from 'winston';
 import { config } from './config';
 
+/**
+ * Safe JSON stringifier that handles circular references
+ * Replaces circular references with "[Circular]" instead of throwing
+ */
+function safeStringify(obj: any, indent: number = 2): string {
+  const seen = new WeakSet();
+
+  return JSON.stringify(
+    obj,
+    (key, value) => {
+      // Handle circular references
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular]';
+        }
+        seen.add(value);
+      }
+      return value;
+    },
+    indent
+  );
+}
+
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.json(),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let log = `${timestamp} [${level.toUpperCase()}]: ${message}`;
-    
+
     if (Object.keys(meta).length > 0) {
-      log += ` ${JSON.stringify(meta, null, 2)}`;
+      log += ` ${safeStringify(meta, 2)}`;
     }
-    
+
     return log;
   })
 );
