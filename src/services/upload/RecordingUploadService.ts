@@ -247,7 +247,7 @@ export class RecordingUploadService {
       logger.info(`All ${uploadUrls.length} files uploaded to Blob Storage successfully`);
       return uploadedFiles;
     } catch (error: any) {
-      // Extract useful error info without circular references
+      // Extract useful error info without circular references from axios errors
       const errorInfo: Record<string, any> = {
         message: error.message,
         code: error.code,
@@ -262,7 +262,17 @@ export class RecordingUploadService {
         errorInfo.noResponse = true;
       }
 
-      logger.error('Failed to upload files to Blob Storage', error as Error, errorInfo);
+      // Add context about which file was being uploaded
+      if (error.config?.url) {
+        errorInfo.uploadUrl = error.config.url;
+      }
+
+      // Create a clean error object to avoid logging the massive axios error with circular refs
+      const cleanError = new Error(error.message || 'Upload failed');
+      cleanError.name = error.name || 'UploadError';
+      cleanError.stack = error.stack;
+
+      logger.error('Failed to upload files to Blob Storage', cleanError, errorInfo);
       throw error;
     }
   }
