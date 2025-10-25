@@ -3,12 +3,12 @@ import { Command } from '../bot/client';
 import { arcaneAPI } from '../services/api';
 import { logInfo, logError } from '../utils/logger';
 
-export const testApiCommand: Command = {
-  name: 'test-api',
-  description: 'Test connection to Arcane Circle API',
-  
+export const diagnosticsCommand: Command = {
+  name: 'diagnostics',
+  description: 'Check bot connection and API status',
+
   async execute(interaction: ChatInputCommandInteraction) {
-    await interaction.deferReply();
+    await interaction.deferReply({ ephemeral: true });
     
     try {
       logInfo('Testing API connection', {
@@ -18,7 +18,7 @@ export const testApiCommand: Command = {
       
       const embed = new EmbedBuilder()
         .setColor(0x5865F2)
-        .setTitle('🔍 API Connection Test')
+        .setTitle('🔍 Bot Diagnostics')
         .setTimestamp();
       
       // Test basic health check
@@ -80,30 +80,30 @@ export const testApiCommand: Command = {
       }
       
       embed.setFooter({
-        text: 'Arcane Circle API Test Complete',
+        text: 'Diagnostics Complete',
         iconURL: interaction.client.user?.displayAvatarURL()
       });
-      
+
       await interaction.editReply({ embeds: [embed] });
-      
-      logInfo('API test completed', {
+
+      logInfo('Diagnostics completed', {
         userId: interaction.user.id,
         guildId: interaction.guildId,
         healthCheck
       });
       
     } catch (error) {
-      logError('API test command failed', error as Error, {
+      logError('Diagnostics command failed', error as Error, {
         userId: interaction.user.id,
         guildId: interaction.guildId
       });
-      
+
       const errorEmbed = new EmbedBuilder()
         .setColor(0xFF0000)
-        .setTitle('❌ API Test Failed')
-        .setDescription(`An error occurred while testing the API connection:\n\`\`\`${(error as Error).message}\`\`\``)
+        .setTitle('❌ Diagnostics Failed')
+        .setDescription(`An error occurred while running diagnostics:\n\`\`\`${(error as Error).message}\`\`\``)
         .setTimestamp();
-      
+
       await interaction.editReply({ embeds: [errorEmbed] });
     }
   }

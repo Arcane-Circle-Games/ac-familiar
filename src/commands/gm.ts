@@ -88,7 +88,7 @@ export const gmCommand: Command = {
           ]
         },
         {
-          name: 'max_players',
+          name: 'max-players',
           description: 'Maximum number of players',
           type: ApplicationCommandOptionType.Integer,
           required: true,
@@ -118,14 +118,14 @@ export const gmCommand: Command = {
           ]
         },
         {
-          name: 'short_description',
+          name: 'short-description',
           description: 'Brief description (max 200 characters)',
           type: ApplicationCommandOptionType.String,
           required: true,
           max_length: 200
         },
         {
-          name: 'content_warnings',
+          name: 'content-warnings',
           description: 'Content warnings (comma-separated)',
           type: ApplicationCommandOptionType.String,
           required: false
@@ -183,10 +183,10 @@ export const gmCommand: Command = {
           choices: [
             { name: 'Title', value: 'title' },
             { name: 'Description', value: 'description' },
-            { name: 'Max Players', value: 'max_players' },
+            { name: 'Max Players', value: 'max-players' },
             { name: 'Price', value: 'price' },
             { name: 'Status', value: 'status' },
-            { name: 'Content Warnings', value: 'content_warnings' }
+            { name: 'Content Warnings', value: 'content-warnings' }
           ]
         },
         {
@@ -482,11 +482,11 @@ async function handleGameCreate(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const systemId = interaction.options.getString('system', true);
   const type = interaction.options.getString('type', true);
-  const maxPlayers = interaction.options.getInteger('max_players', true);
+  const maxPlayers = interaction.options.getInteger('max-players', true);
   const price = interaction.options.getNumber('price', true);
   const timezone = interaction.options.getString('timezone', true);
-  const shortDescription = interaction.options.getString('short_description', true);
-  const contentWarnings = interaction.options.getString('content_warnings');
+  const shortDescription = interaction.options.getString('short-description', true);
+  const contentWarnings = interaction.options.getString('content-warnings');
   
   // Show modal for full description
   const modal = new ModalBuilder()
@@ -686,12 +686,12 @@ async function handleGameEdit(interaction: ChatInputCommandInteraction) {
     await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
 
     let updateData: any = {};
-    
-    if (field === 'max_players') {
+
+    if (field === 'max-players') {
       updateData.maxPlayers = parseInt(value);
     } else if (field === 'price') {
       updateData.pricePerSession = parseFloat(value);
-    } else if (field === 'content_warnings') {
+    } else if (field === 'content-warnings') {
       updateData.contentWarnings = value.split(',').map(w => w.trim());
     } else {
       updateData[field] = value;

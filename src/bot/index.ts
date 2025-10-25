@@ -3,14 +3,17 @@ import { ArcaneClient, Command } from './client';
 import { config } from '../utils/config';
 import { logError, logInfo, logDiscordEvent } from '../utils/logger';
 import { pingCommand } from '../commands/ping';
-import { testApiCommand } from '../commands/test-api';
+import { diagnosticsCommand } from '../commands/diagnostics';
 import { linkCommand } from '../commands/link';
 import { gamesCommand } from '../commands/games';
 import { gameInfoCommand, gameInfoCommandData } from '../commands/game-info';
 import { gmCommand } from '../commands/gm';
-import { recordTestCommand, recordingManager } from '../commands/record-test';
+import { recordCommand, recordingManager } from '../commands/record';
+import { recordingsCommand } from '../commands/recordings';
+import { downloadRecordingCommand } from '../commands/download-recording';
+import { uploadTranscriptCommand } from '../commands/upload-transcript';
+import { transcribeCommand } from '../commands/transcribe';
 import { postSummaryCommand } from '../commands/post-summary';
-import { testSummaryCommand } from '../commands/test-summary';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -81,14 +84,17 @@ export class ArcaneBot {
   private loadCommands() {
     const commands: Command[] = [
       pingCommand,
-      testApiCommand,
+      diagnosticsCommand,
       linkCommand,
       gamesCommand,
       gameInfoCommand,
       gmCommand,
-      recordTestCommand,
-      postSummaryCommand,
-      testSummaryCommand
+      recordCommand,
+      recordingsCommand,
+      downloadRecordingCommand,
+      uploadTranscriptCommand,
+      transcribeCommand,
+      postSummaryCommand
     ];
     
     commands.forEach(command => {
