@@ -7,7 +7,10 @@ import { diagnosticsCommand } from '../commands/diagnostics';
 import { linkCommand } from '../commands/link';
 import { gamesCommand } from '../commands/games';
 import { gameInfoCommand, gameInfoCommandData } from '../commands/game-info';
-import { gmCommand } from '../commands/gm';
+import { gmProfileCommand } from '../commands/gm-profile';
+import { gmGameCommand } from '../commands/gm-game';
+import { gmBookingsCommand } from '../commands/gm-bookings';
+import { gmStatsCommand } from '../commands/gm-stats';
 import { recordCommand, recordingManager } from '../commands/record';
 import { recordingsCommand } from '../commands/recordings';
 import { downloadRecordingCommand } from '../commands/download-recording';
@@ -88,7 +91,10 @@ export class ArcaneBot {
       linkCommand,
       gamesCommand,
       gameInfoCommand,
-      gmCommand,
+      gmProfileCommand,
+      gmGameCommand,
+      gmBookingsCommand,
+      gmStatsCommand,
       recordCommand,
       recordingsCommand,
       downloadRecordingCommand,
