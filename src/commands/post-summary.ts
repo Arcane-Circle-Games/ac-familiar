@@ -8,6 +8,7 @@ import {
 } from 'discord.js';
 import { arcaneAPI } from '../services/api';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
+import { formatDuration } from '../utils/formatters';
 import { logger } from '../utils/logger';
 
 export const postSummaryCommand = {
@@ -307,18 +308,3 @@ export const postSummaryCommand = {
     }
   }
 };
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  } else {
-    return `${seconds}s`;
-  }
-}

@@ -7,6 +7,7 @@ import {
 import { logger } from '../utils/logger';
 import { transcriptUploadService } from '../services/transcription/TranscriptUploadService';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
+import { formatDuration } from '../utils/formatters';
 import { Command } from '../bot/client';
 
 export const uploadTranscriptCommand: Command = {
@@ -150,18 +151,3 @@ export const uploadTranscriptCommand: Command = {
     }
   }
 };
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  } else {
-    return `${seconds}s`;
-  }
-}

@@ -9,6 +9,7 @@ import { recordingManager } from './record';
 import { logger } from '../utils/logger';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
 import { recordingUploadService } from '../services/upload/RecordingUploadService';
+import { formatBytes, formatDuration } from '../utils/formatters';
 import { Command } from '../bot/client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -306,8 +307,8 @@ async function handleUpload(interaction: CommandInteraction, sessionId: string):
       try {
         await fs.access(track.filePath);
         const stats = await fs.stat(track.filePath);
-        track.fileSize = stats.size;
-        existingTracks.push(track);
+        const updatedTrack = { ...track, fileSize: stats.size };
+        existingTracks.push(updatedTrack);
       } catch {
         missingTracks.push(track);
       }
@@ -389,30 +390,5 @@ async function handleUpload(interaction: CommandInteraction, sessionId: string):
     await interaction.editReply({
       content: `❌ **Upload failed:** ${errorMsg}`
     });
-  }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
-
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  } else {
-    return `${seconds}s`;
   }
 }
