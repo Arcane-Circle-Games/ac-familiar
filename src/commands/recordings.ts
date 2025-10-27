@@ -10,6 +10,7 @@ import { logger } from '../utils/logger';
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
 import { recordingUploadService } from '../services/upload/RecordingUploadService';
 import { formatBytes, formatDuration } from '../utils/formatters';
+import { requiresGuild } from '../utils/context';
 import { Command } from '../bot/client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -261,6 +262,11 @@ async function handleTranscribe(interaction: CommandInteraction, sessionId: stri
 
 async function handleUpload(interaction: CommandInteraction, sessionId: string): Promise<void> {
   try {
+    // Upload requires guild context for metadata
+    if (!(await requiresGuild(interaction, '❌ Upload requires server context for metadata. Please use this command in a server.'))) {
+      return;
+    }
+
     const member = interaction.member as GuildMember;
     const recordingsDir = './recordings';
     const sessionPath = path.join(recordingsDir, sessionId);

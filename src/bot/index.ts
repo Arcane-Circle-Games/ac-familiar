@@ -117,32 +117,40 @@ export class ArcaneBot {
       const commands = this.client.getAllCommands().map(command => {
         // Handle special commands with custom data
         if (command.name === 'game-info') {
-          return gameInfoCommandData.toJSON();
+          const commandData = gameInfoCommandData.toJSON();
+          return {
+            ...commandData,
+            dm_permission: true
+          };
         }
-        
+
+        // Define which commands are guild-only (voice/recording commands)
+        const guildOnlyCommands = ['record'];
+
         return {
           name: command.name,
           description: command.description,
-          options: command.options || []
+          options: command.options || [],
+          dm_permission: !guildOnlyCommands.includes(command.name)
         };
       });
       
+      // Always register globally for DM support
+      await this.rest.put(
+        Routes.applicationCommands(config.DISCORD_CLIENT_ID),
+        { body: commands }
+      );
+
+      logInfo(`✅ Successfully registered ${commands.length} global commands`);
+
+      // Also register to specific guild for instant updates during development
       if (config.DISCORD_GUILD_ID) {
-        // Register commands for a specific guild (faster for development)
         await this.rest.put(
           Routes.applicationGuildCommands(config.DISCORD_CLIENT_ID, config.DISCORD_GUILD_ID),
           { body: commands }
         );
-        
-        logInfo(`✅ Successfully registered ${commands.length} guild commands`);
-      } else {
-        // Register commands globally (slower but works in all guilds)
-        await this.rest.put(
-          Routes.applicationCommands(config.DISCORD_CLIENT_ID),
-          { body: commands }
-        );
-        
-        logInfo(`✅ Successfully registered ${commands.length} global commands`);
+
+        logInfo(`✅ Also registered ${commands.length} guild commands for fast testing`);
       }
       
     } catch (error) {
