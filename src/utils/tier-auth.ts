@@ -3,7 +3,7 @@
  */
 
 import { User } from '../types/api';
-import { logDebug } from './logger';
+import { logInfo } from './logger';
 
 /**
  * Tiers that have bot access
@@ -25,15 +25,16 @@ export type TierExemptCommand = typeof TIER_EXEMPT_COMMANDS[number];
  */
 export function hasAuthorizedTier(user: User | null | undefined): boolean {
   if (!user || !user.tier) {
-    logDebug('User has no tier assigned', { userId: user?.id });
+    logInfo('User has no tier assigned', { userId: user?.id, user });
     return false;
   }
 
   const hasAccess = AUTHORIZED_TIERS.includes(user.tier as AuthorizedTier);
 
-  logDebug('Tier authorization check', {
+  logInfo('Tier authorization check', {
     userId: user.id,
     userTier: user.tier,
+    authorizedTiers: AUTHORIZED_TIERS,
     hasAccess
   });
 
