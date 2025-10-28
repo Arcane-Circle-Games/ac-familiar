@@ -2,9 +2,9 @@
 
 This document provides a comprehensive reference for all API endpoints in the Arcane Circle MVP platform.
 
-**Total Endpoints:** 69 endpoints across 9 functional areas  
-**Authentication:** NextAuth.js with session-based authentication  
-**Base URL:** `/api`  
+**Total Endpoints:** 71 endpoints across 9 functional areas
+**Authentication:** NextAuth.js with session-based authentication + Bot API key support
+**Base URL:** `/api`
 **Response Format:** JSON with consistent error handling
 
 ---
@@ -85,6 +85,52 @@ This document provides a comprehensive reference for all API endpoints in the Ar
 - **POST** `/api/games/[id]/complete` - Mark game as complete
   - **Auth:** Required (GM owner only)
 
+### Recently Published Games
+- **GET** `/api/games/recent` - Get recently published games
+  - **Query:** `minutes` (optional, 1-10080, default: 180)
+  - **Auth:** None (public endpoint)
+  - **Response:** Games published within the specified time window
+  - **Format:**
+    ```json
+    {
+      "success": true,
+      "data": {
+        "games": [
+          {
+            "id": "string",
+            "vanitySlug": "string",
+            "title": "string",
+            "description": "string",
+            "system": { "id": "string", "name": "string", "shortName": "string" },
+            "startTime": "ISO-8601",
+            "duration": number,
+            "pricePerSession": "string",
+            "maxPlayers": number,
+            "currentPlayers": number,
+            "availableSlots": number,
+            "gameType": "string",
+            "publishedAt": "ISO-8601",
+            "gm": {
+              "displayName": "string",
+              "vanitySlug": "string",
+              "profile": {
+                "averageRating": "string",
+                "totalRatings": number,
+                "verified": boolean
+              }
+            },
+            "url": "string"
+          }
+        ],
+        "query": {
+          "minutes": number,
+          "cutoffTime": "ISO-8601",
+          "count": number
+        }
+      }
+    }
+    ```
+
 ---
 
 ## Session Management
@@ -123,6 +169,38 @@ This document provides a comprehensive reference for all API endpoints in the Ar
 ## Booking & Payment System
 
 ### Booking Management
+- **GET** `/api/bookings/me` - Get current user's bookings
+  - **Auth:** Required (session) OR Bot auth with `?discordId` query param
+  - **Query:** `discordId` (required for bot auth)
+  - **Response:** Array of active bookings with game details
+  - **Format:**
+    ```json
+    {
+      "bookings": [
+        {
+          "id": "string",
+          "status": "CONFIRMED|PENDING|APPROVED",
+          "paymentStatus": "SUCCEEDED|PENDING|FAILED",
+          "bookingType": "PLAYER",
+          "game": {
+            "id": "string",
+            "title": "string",
+            "vanitySlug": "string",
+            "gameType": "CAMPAIGN|ONE_SHOT",
+            "isRecurring": boolean,
+            "frequency": "WEEKLY|BI_WEEKLY|MONTHLY",
+            "startTime": "ISO-8601",
+            "system": { "id": "string", "name": "string", "shortName": "string" },
+            "gm": { "displayName": "string", "vanitySlug": "string" },
+            "nextSession": { "sessionNumber": number, "scheduledTime": "ISO-8601" },
+            "url": "string"
+          }
+        }
+      ],
+      "count": number
+    }
+    ```
+
 - **GET** `/api/bookings/[id]` - Get booking details
   - **Auth:** Required (player or GM)
 
@@ -141,8 +219,14 @@ This document provides a comprehensive reference for all API endpoints in the Ar
 ### Booking Actions
 - **POST** `/api/bookings/[id]/retry-payment` - Retry failed payment
 - **POST** `/api/bookings/[id]/reset` - Reset booking payment status
-- **POST** `/api/bookings/[id]/leave` - Leave campaign
-  - **Features:** Cancels all future payment intents
+- **POST** `/api/bookings/[id]/leave` - Leave game/campaign
+  - **Auth:** Required (session) OR Bot auth (Authorization: Bearer header)
+  - **Features:**
+    - Cancels all active payment intents (pre-authorizations)
+    - Sets booking status to CANCELLED
+    - Sends notification to GM
+    - Preserves history for transactions/refunds
+  - **Use Case:** Players leaving campaigns via Discord bot (`/leave-game` command)
 
 ### Payment Methods
 - **GET** `/api/payment-methods` - Get user's payment methods

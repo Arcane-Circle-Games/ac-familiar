@@ -294,6 +294,30 @@ export class GameService {
       throw error;
     }
   }
+
+  // Get recently published games
+  public async getRecentGames(minutes: number = 180): Promise<import('../../types/api').RecentGame[]> {
+    try {
+      logInfo('Fetching recently published games', { minutes });
+
+      const response = await apiClient.get<import('../../types/api').RecentGamesResponse>(
+        `/games/recent?minutes=${minutes}`
+      );
+
+      // DETAILED DEBUG LOGGING
+      console.log('=== RECENT GAMES API RESPONSE ===');
+      console.log('Full response.data:', JSON.stringify(response.data, null, 2));
+      console.log('response.data.data:', (response.data as any)?.data);
+      console.log('response.data.data.games:', (response.data as any)?.data?.games);
+      console.log('response.data.games:', (response.data as any)?.games);
+      console.log('=================================');
+
+      return response.data?.games || [];
+    } catch (error) {
+      logError('Failed to fetch recent games', error as Error, { minutes });
+      throw error;
+    }
+  }
 }
 
 export const gameService = new GameService();

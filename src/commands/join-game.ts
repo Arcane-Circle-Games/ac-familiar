@@ -106,6 +106,22 @@ export const joinGameCommand: Command = {
           return;
         }
 
+        if (errorMessage.includes('no payment method on file')) {
+          const noPaymentEmbed = new EmbedBuilder()
+            .setColor(0xFF0000)
+            .setTitle('💳 Payment Method Required')
+            .setDescription('You need to add a payment method before you can join games.')
+            .addFields({
+              name: '📝 Add Payment Method',
+              value: `Please visit [Payment Settings](${config.PLATFORM_WEB_URL}/dashboard/settings/payments) to add a payment method to your account.`,
+              inline: false
+            })
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [noPaymentEmbed] });
+          return;
+        }
+
         if (errorMessage.includes('payment method') || errorMessage.includes('no default payment')) {
           const noPaymentEmbed = new EmbedBuilder()
             .setColor(0xFF0000)

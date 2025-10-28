@@ -19,6 +19,8 @@ import { downloadRecordingCommand } from '../commands/download-recording';
 import { uploadTranscriptCommand } from '../commands/upload-transcript';
 import { transcribeCommand } from '../commands/transcribe';
 import { postSummaryCommand } from '../commands/post-summary';
+import { testAnnouncementsCommand } from '../commands/test-announcements';
+import { leaveGameCommand } from '../commands/leave-game';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -104,7 +106,9 @@ export class ArcaneBot {
       downloadRecordingCommand,
       uploadTranscriptCommand,
       transcribeCommand,
-      postSummaryCommand
+      postSummaryCommand,
+      testAnnouncementsCommand,
+      leaveGameCommand
     ];
     
     commands.forEach(command => {

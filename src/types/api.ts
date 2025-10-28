@@ -340,3 +340,95 @@ export interface WikiPageResponse {
   children?: WikiPage[];
   attachments?: WikiAttachment[];
 }
+
+// Game Announcement Types
+export interface RecentGameSystem {
+  id: string;
+  name: string;
+  shortName: string;
+}
+
+export interface RecentGameGMProfile {
+  averageRating: string;
+  totalRatings: number;
+  verified: boolean;
+}
+
+export interface RecentGameGM {
+  displayName: string;
+  vanitySlug: string;
+  profile: RecentGameGMProfile;
+}
+
+export interface RecentGame {
+  id: string;
+  vanitySlug: string;
+  title: string;
+  description: string;
+  system: RecentGameSystem;
+  startTime: string;
+  duration: number;
+  pricePerSession: string;
+  maxPlayers: number;
+  currentPlayers: number;
+  availableSlots: number;
+  gameType: string;
+  publishedAt: string;
+  gm: RecentGameGM;
+  url: string;
+}
+
+export interface RecentGamesQuery {
+  minutes: number;
+  cutoffTime: string;
+  count: number;
+}
+
+export interface RecentGamesResponse {
+  games: RecentGame[];
+  query: RecentGamesQuery;
+}
+
+// User Bookings Types
+export interface UserBookingGameSystem {
+  id: string;
+  name: string;
+  shortName: string;
+}
+
+export interface UserBookingGM {
+  displayName: string;
+  vanitySlug: string;
+}
+
+export interface UserBookingNextSession {
+  sessionNumber: number;
+  scheduledTime: string;
+}
+
+export interface UserBookingGame {
+  id: string;
+  title: string;
+  vanitySlug: string;
+  gameType: string;
+  isRecurring: boolean;
+  frequency?: string;
+  startTime: string;
+  system: UserBookingGameSystem;
+  gm: UserBookingGM;
+  nextSession?: UserBookingNextSession;
+  url: string;
+}
+
+export interface UserBooking {
+  id: string;
+  status: string;
+  paymentStatus: string;
+  bookingType: string;
+  game: UserBookingGame;
+}
+
+export interface UserBookingsResponse {
+  bookings: UserBooking[];
+  count: number;
+}

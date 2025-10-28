@@ -76,11 +76,51 @@ export class BookingService {
   public async getGameBookings(gameId: string, filters?: { status?: string }): Promise<Booking[]> {
     try {
       logInfo('Fetching game bookings', { gameId, filters });
-      
+
       const response = await apiClient.get<{ data: Booking[]; pagination?: any }>(`/games/${gameId}/bookings`, filters);
       return response.data!.data;
     } catch (error) {
       logError('Failed to fetch game bookings', error as Error, { gameId, filters });
+      throw error;
+    }
+  }
+
+  // Get current user's bookings
+  public async getMyBookings(discordUserId: string): Promise<import('../../types/api').UserBooking[]> {
+    try {
+      logInfo('Fetching user bookings', { discordUserId });
+
+      // Bot authentication - pass discordId as query parameter
+      const response = await apiClient.get<import('../../types/api').UserBookingsResponse>(
+        '/bookings/me',
+        { discordId: discordUserId }
+      );
+
+      logInfo('Raw API response for bookings', {
+        discordUserId,
+        responseData: response.data,
+        bookingsPath: response.data?.bookings,
+        bookingsCount: response.data?.bookings?.length || 0
+      });
+
+      return response.data?.bookings || [];
+    } catch (error) {
+      logError('Failed to fetch user bookings', error as Error, { discordUserId });
+      throw error;
+    }
+  }
+
+  // Leave a game (cancel booking)
+  public async leaveGame(bookingId: string, discordUserId: string): Promise<void> {
+    try {
+      logInfo('Leaving game', { bookingId, discordUserId });
+
+      // Bot authentication - no user lookup needed, bot API key is sent automatically
+      await apiClient.post(`/bookings/${bookingId}/leave`);
+
+      logInfo('Successfully left game', { bookingId, discordUserId });
+    } catch (error) {
+      logError('Failed to leave game', error as Error, { bookingId, discordUserId });
       throw error;
     }
   }

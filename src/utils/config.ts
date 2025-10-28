@@ -65,7 +65,12 @@ const configSchema = z.object({
   WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
   WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
   WEBHOOK_LISTENER_PORT: z.coerce.number().min(1).max(65535).default(3001),
-  WEBHOOK_LISTENER_ENABLED: z.coerce.boolean().default(false)
+  WEBHOOK_LISTENER_ENABLED: z.coerce.boolean().default(false),
+
+  // Game Announcement Configuration
+  GAME_ANNOUNCEMENT_ENABLED: z.coerce.boolean().default(false),
+  GAME_ANNOUNCEMENT_CHANNEL_ID: z.string().optional(),
+  GAME_ANNOUNCEMENT_INTERVAL_HOURS: z.coerce.number().min(1).max(24).default(3)
 });
 
 const parseConfig = () => {

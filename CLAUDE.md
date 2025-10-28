@@ -119,6 +119,34 @@ The bot supports dual-tier transcription:
 - Database schema and API endpoints
 - Cost management and upgrade flow
 
+### Game Announcement Scheduler
+The bot includes an automated system for announcing newly published games to a designated Discord channel.
+
+**How It Works**:
+1. **Cron Job** - Runs on configurable schedule (default: every 3 hours)
+2. **API Polling** - Fetches recently published games from `/api/games/recent?minutes={interval}`
+3. **Discord Posting** - Posts rich embeds to configured channel with game details
+4. **Rate Limiting** - Respects Discord's 5 messages per 5 seconds limit
+
+**Architecture** (`src/services/scheduled/`):
+- `GameAnnouncementScheduler.ts` - Main scheduler using node-cron
+- Runs automatically on bot startup if `GAME_ANNOUNCEMENT_ENABLED=true`
+- Single global instance (no duplicate announcements across servers)
+
+**Configuration** (`.env`):
+```
+GAME_ANNOUNCEMENT_ENABLED=true|false
+GAME_ANNOUNCEMENT_CHANNEL_ID=your_channel_id
+GAME_ANNOUNCEMENT_INTERVAL_HOURS=3  # 1-24 hours
+```
+
+**Testing**:
+- Use `/test-announcements` command to manually trigger a check
+- No duplicate prevention (relies on API time-window filtering)
+- Announcements include: title, system, GM, price, schedule, availability, link
+
+**Note**: The scheduler runs once globally regardless of how many Discord servers the bot is in. Only one channel receives announcements (configured via channel ID).
+
 ### Type System
 - `src/types/api.ts` - API request/response interfaces matching platform schema
 - `src/types/discord.ts` - Discord-specific extensions
@@ -209,6 +237,10 @@ For development, set `DISCORD_GUILD_ID` to register commands instantly to a test
 - `/game-info game:{name}` - Get detailed info about a specific game
 - `/gm` - Browse GMs and their offerings
 
+**Game Management:**
+- `/join-game game-id:{id}` - Book and join a game (requires payment method)
+- `/leave-game game:{autocomplete}` - Leave a game you've joined (shows your active bookings)
+
 **Account Management:**
 - `/link` - Get link to connect Discord account via OAuth
 - `/test-api` - Test API connectivity and authentication
@@ -220,7 +252,8 @@ For development, set `DISCORD_GUILD_ID` to register commands instantly to a test
 - `/upload-transcript file:{json}` - Upload locally-generated transcript
 - `/transcribe` - View guide for local transcription workflow
 
-**Utility:**
+**Admin/Testing:**
+- `/test-announcements` - Manually trigger game announcement check
 - `/ping` - Check bot responsiveness
 
 **See [TRANSCRIPTION.md](./TRANSCRIPTION.md) for detailed transcription workflows.**
