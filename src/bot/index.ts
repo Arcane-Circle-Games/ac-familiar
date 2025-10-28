@@ -2,6 +2,13 @@ import { REST, Routes, ChatInputCommandInteraction } from 'discord.js';
 import { ArcaneClient, Command } from './client';
 import { config } from '../utils/config';
 import { logError, logInfo, logDiscordEvent } from '../utils/logger';
+import {
+  isCommandTierExempt,
+  hasAuthorizedTier,
+  getUnauthorizedAccessMessage,
+  getUnlinkedAccountMessage
+} from '../utils/tier-auth';
+import { arcaneAPI } from '../services/api';
 import { pingCommand } from '../commands/ping';
 import { diagnosticsCommand } from '../commands/diagnostics';
 import { linkCommand } from '../commands/link';
@@ -34,12 +41,12 @@ export class ArcaneBot {
     this.client.on('interactionCreate', async (interaction) => {
       if (interaction.isChatInputCommand()) {
         const command = this.client.getCommand(interaction.commandName);
-        
+
         if (!command) {
           logError(`Unknown command: ${interaction.commandName}`);
           return;
         }
-        
+
         try {
           logDiscordEvent('commandExecuted', {
             commandName: interaction.commandName,
@@ -47,17 +54,58 @@ export class ArcaneBot {
             username: interaction.user.username,
             guildId: interaction.guildId
           });
-          
+
+          // Check if command is tier-exempt (link, ping)
+          if (!isCommandTierExempt(interaction.commandName)) {
+            // Command requires tier authorization - check user's tier
+            try {
+              const user = await arcaneAPI.getUserByDiscordId(interaction.user.id);
+
+              if (!user) {
+                // User not linked
+                await interaction.reply({
+                  content: getUnlinkedAccountMessage(),
+                  ephemeral: true
+                });
+                return;
+              }
+
+              if (!hasAuthorizedTier(user)) {
+                // User linked but doesn't have authorized tier
+                await interaction.reply({
+                  content: getUnauthorizedAccessMessage(),
+                  ephemeral: true
+                });
+                return;
+              }
+
+              // User has authorized tier - proceed with command execution
+            } catch (error) {
+              // User lookup failed - treat as unlinked
+              logError('User lookup failed during tier check', error as Error, {
+                userId: interaction.user.id,
+                commandName: interaction.commandName
+              });
+
+              await interaction.reply({
+                content: getUnlinkedAccountMessage(),
+                ephemeral: true
+              });
+              return;
+            }
+          }
+
+          // Execute the command (either tier-exempt or tier-authorized)
           await command.execute(interaction as ChatInputCommandInteraction);
-          
+
         } catch (error) {
           logError(`Error executing command: ${interaction.commandName}`, error as Error, {
             userId: interaction.user.id,
             guildId: interaction.guildId
           });
-          
+
           const errorMessage = 'There was an error while executing this command!';
-          
+
           try {
             if (interaction.replied || interaction.deferred) {
               await interaction.followUp({ content: errorMessage, ephemeral: true });
@@ -70,11 +118,11 @@ export class ArcaneBot {
         }
       } else if (interaction.isAutocomplete()) {
         const command = this.client.getCommand(interaction.commandName);
-        
+
         if (!command || !command.autocomplete) {
           return;
         }
-        
+
         try {
           await command.autocomplete(interaction);
         } catch (error) {

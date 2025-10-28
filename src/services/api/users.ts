@@ -7,6 +7,7 @@ export interface User {
   username: string;
   discordId?: string;
   discordUsername?: string;
+  tier?: string; // User access tier (e.g., "Alpha", "Wizard_Backer")
   profile?: {
     id: string;
     firstName: string;

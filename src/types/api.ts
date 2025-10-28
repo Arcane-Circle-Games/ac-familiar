@@ -4,6 +4,7 @@ export interface User {
   email: string;
   discordId?: string;
   avatarUrl?: string;
+  tier?: string; // User access tier (e.g., "Alpha", "Wizard_Backer")
   createdAt: string;
   updatedAt: string;
 }
