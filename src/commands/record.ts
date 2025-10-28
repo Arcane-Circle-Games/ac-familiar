@@ -87,7 +87,7 @@ export const recordingManager = new RecordingManager();
 
 export const recordCommand = {
   name: 'record',
-  description: 'Record voice channel audio and manage recordings',
+  description: 'Record voice channel audio (automatically uploads to platform)',
   options: [
     {
       name: 'action',
@@ -96,22 +96,8 @@ export const recordCommand = {
       required: true,
       choices: [
         { name: 'Start Recording', value: 'start' },
-        { name: 'Stop Recording (don\'t save)', value: 'stop' },
-        { name: 'Stop & Save Recording', value: 'stop-save' },
-        { name: 'Check Status', value: 'status' }
+        { name: 'Stop Recording', value: 'stop' }
       ]
-    },
-    {
-      name: 'auto-upload',
-      description: 'Upload to platform after saving (stop-save only)',
-      type: 5, // BOOLEAN type
-      required: false
-    },
-    {
-      name: 'auto-transcribe',
-      description: 'Transcribe with AI after saving (stop-save only, uses OpenAI credits)',
-      type: 5, // BOOLEAN type
-      required: false
     }
   ],
 
@@ -127,9 +113,9 @@ export const recordCommand = {
     const member = interaction.member as GuildMember;
     const action = (interaction as ChatInputCommandInteraction).options.getString('action', true);
 
-    // Check if user is in a voice channel for recording actions
+    // Check if user is in a voice channel
     const voiceChannel = member.voice.channel as VoiceChannel;
-    if (!voiceChannel && (action === 'start' || action === 'stop' || action === 'stop-save')) {
+    if (!voiceChannel) {
       await interaction.reply({
         content: '❌ You must be in a voice channel to use this command',
         ephemeral: true
@@ -137,11 +123,8 @@ export const recordCommand = {
       return;
     }
 
-    // Defer reply immediately for long-running actions (non-ephemeral)
-    const deferredActions = ['start', 'stop', 'stop-save'];
-    if (deferredActions.includes(action)) {
-      await interaction.deferReply();
-    }
+    // Defer reply immediately for long-running actions
+    await interaction.deferReply();
 
     try {
       switch (action) {
@@ -149,18 +132,8 @@ export const recordCommand = {
           await handleStartRecording(interaction, voiceChannel, member);
           break;
         case 'stop':
-          await handleStopRecording(interaction, voiceChannel, member, false, false, false);
-          break;
-        case 'stop-save':
-          {
-            const chatInteraction = interaction as ChatInputCommandInteraction;
-            const shouldUpload = chatInteraction.options.getBoolean('auto-upload') ?? false;
-            const shouldTranscribe = chatInteraction.options.getBoolean('auto-transcribe') ?? false;
-            await handleStopRecording(interaction, voiceChannel, member, true, shouldTranscribe, shouldUpload);
-          }
-          break;
-        case 'status':
-          await handleGetStatus(interaction, voiceChannel?.id);
+          // Always save and upload (transcription handled by platform)
+          await handleStopRecording(interaction, voiceChannel, member, true, false, true);
           break;
         default:
           await interaction.reply({
@@ -290,57 +263,3 @@ async function handleStopRecording(
   await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleGetStatus(
-  interaction: CommandInteraction,
-  channelId?: string
-): Promise<void> {
-  const activeSessions = recordingManager.getActiveSessions();
-  const totalMemoryUsage = recordingManager.getTotalMemoryUsage();
-
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Recording Status')
-    .setColor(0x0099ff)
-    .setTimestamp();
-
-  if (activeSessions.length === 0) {
-    embed.setDescription('No active recording sessions');
-  } else {
-    embed.setDescription(`**Active Sessions:** ${activeSessions.length}`);
-
-    // Add current channel status if provided
-    if (channelId) {
-      const status = recordingManager.getRecordingStatus(channelId);
-      if (status.isRecording) {
-        embed.addFields({
-          name: 'Current Channel',
-          value: [
-            `**Session:** \`${status.sessionId}\``,
-            `**Duration:** ${Math.round((status.duration || 0) / 1000)}s`,
-            `**Users:** ${status.stats?.users || 0}`,
-            `**Participants:** ${status.stats?.participants || 0}`,
-            `**Memory Usage:** ${formatBytes(status.stats?.memoryUsage || 0)}`
-          ].join('\n'),
-          inline: false
-        });
-      } else {
-        embed.addFields({
-          name: 'Current Channel',
-          value: 'Not recording',
-          inline: true
-        });
-      }
-    }
-
-    // Add global stats
-    embed.addFields({
-      name: 'Global Stats',
-      value: [
-        `**Total Sessions:** ${activeSessions.length}`,
-        `**Total Memory Usage:** ${formatBytes(totalMemoryUsage)}`
-      ].join('\n'),
-      inline: false
-    });
-  }
-
-  await interaction.reply({ embeds: [embed], ephemeral: true });
-}

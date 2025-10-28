@@ -14,10 +14,6 @@ import { gmGameCommand } from '../commands/gm-game';
 import { gmBookingsCommand } from '../commands/gm-bookings';
 import { gmStatsCommand } from '../commands/gm-stats';
 import { recordCommand, recordingManager } from '../commands/record';
-import { recordingsCommand } from '../commands/recordings';
-import { downloadRecordingCommand } from '../commands/download-recording';
-import { uploadTranscriptCommand } from '../commands/upload-transcript';
-import { transcribeCommand } from '../commands/transcribe';
 import { postSummaryCommand } from '../commands/post-summary';
 import { testAnnouncementsCommand } from '../commands/test-announcements';
 import { leaveGameCommand } from '../commands/leave-game';
@@ -102,10 +98,6 @@ export class ArcaneBot {
       gmBookingsCommand,
       gmStatsCommand,
       recordCommand,
-      recordingsCommand,
-      downloadRecordingCommand,
-      uploadTranscriptCommand,
-      transcribeCommand,
       postSummaryCommand,
       testAnnouncementsCommand,
       leaveGameCommand
