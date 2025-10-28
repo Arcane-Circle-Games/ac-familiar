@@ -12,8 +12,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies (including dev dependencies for build)
-# Skip optional dependencies (platform-specific Whisper packages)
-RUN npm ci --omit=optional
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -39,8 +38,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install production dependencies only
-# Skip optional dependencies (platform-specific Whisper packages)
-RUN npm ci --omit=dev --omit=optional
+RUN npm ci --omit=dev
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Discord bot for the Arcane Circle TTRPG marketplace platform. The bot integrates with the platform's API to enable game discovery, account linking, voice recording with transcription, and campaign management directly from Discord.
+Discord bot for the Arcane Circle TTRPG marketplace platform. The bot integrates with the platform's API to enable game discovery, account linking, voice recording, and campaign management directly from Discord. Audio transcription is handled by the cloud API after upload.
 
 **Stack**: TypeScript, Discord.js v14, Node.js 18+, Axios (API client)
 
@@ -22,16 +22,6 @@ Discord bot for the Arcane Circle TTRPG marketplace platform. The bot integrates
 - `npm run lint` - Check TypeScript code with ESLint
 - `npm run lint:fix` - Auto-fix linting issues
 - `npm run format` - Format code with Prettier
-
-### Database (PostgreSQL + Prisma)
-- `npm run db:generate` - Generate Prisma client from schema
-- `npm run db:push` - Push schema changes to database
-- `npm run db:migrate` - Create and run migrations
-- `npm run db:reset` - Reset database (destructive)
-
-### Docker Services
-- `npm run docker:up` - Start PostgreSQL, Redis, pgAdmin, Redis Commander
-- `npm run docker:down` - Stop all Docker services
 
 ## Architecture
 
@@ -108,16 +98,10 @@ Commands are registered in `src/bot/index.ts` in the `loadCommands()` method.
   - See tech debt comments in `RecordingUploadService.ts:127-146` for migration plan
 
 **Transcription System**:
-The bot supports dual-tier transcription:
-- **Free Tier**: Users transcribe on platform using WebAssembly Whisper (browser-based, free compute)
-- **Paid Tier**: Automatic cloud transcription via OpenAI Whisper API (background queue)
-
-**See [TRANSCRIPTION.md](./TRANSCRIPTION.md) for comprehensive documentation** including:
-- User workflows for both tiers
-- Bot commands (`/download-recording`, `/upload-transcript`, `/transcribe`)
-- Platform integration (WebAssembly vs OpenAI)
-- Database schema and API endpoints
-- Cost management and upgrade flow
+Transcription is handled entirely by the platform API after audio upload:
+- Bot uploads audio files to Vercel Blob Storage via platform API
+- Platform handles transcription processing (WebAssembly or cloud-based)
+- No local transcription or queue management in the bot
 
 ### Game Announcement Scheduler
 The bot includes an automated system for announcing newly published games to a designated Discord channel.
@@ -162,10 +146,9 @@ TypeScript paths are configured with `@/` aliases:
 Configuration uses Zod for validation (`src/utils/config.ts`). Required variables:
 
 ```
-DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID
-PLATFORM_API_URL, PLATFORM_WEB_URL, VERCEL_BYPASS_TOKEN
-DATABASE_URL, REDIS_URL
-OPENAI_API_KEY (for transcription)
+DISCORD_TOKEN, DISCORD_CLIENT_ID
+PLATFORM_API_URL, PLATFORM_WEB_URL, VERCEL_BYPASS_TOKEN, BOT_API_KEY
+NODE_ENV, LOG_LEVEL
 ```
 
 See `.env.example` for complete list.
@@ -245,18 +228,16 @@ For development, set `DISCORD_GUILD_ID` to register commands instantly to a test
 - `/link` - Get link to connect Discord account via OAuth
 - `/test-api` - Test API connectivity and authentication
 
-**Recording & Transcription:**
-- `/record-test action:start` - Start recording voice channel
-- `/record-test action:stop-save` - Stop and save recording
+**Recording:**
+- `/record action:start` - Start recording voice channel
+- `/record action:stop-save` - Stop and save recording (uploads to platform API)
 - `/download-recording session-id:{id}` - Get download links for recording files
-- `/upload-transcript file:{json}` - Upload locally-generated transcript
-- `/transcribe` - View guide for local transcription workflow
+
+**Note**: Transcription is handled automatically by the platform API after upload.
 
 **Admin/Testing:**
 - `/test-announcements` - Manually trigger game announcement check
 - `/ping` - Check bot responsiveness
-
-**See [TRANSCRIPTION.md](./TRANSCRIPTION.md) for detailed transcription workflows.**
 
 ## Common Patterns
 
@@ -283,5 +264,5 @@ Use EmbedBuilder for formatted responses with game/campaign information (see `/g
 - Account linking requires OAuth via web platform (405 on `/users/link-discord` endpoint)
 - `/systems` endpoint may not exist on platform API
 - Recording system requires voice intents and opus dependencies
-- Transcription requires OpenAI API key and credits
+- Transcription is handled by the platform API (not locally)
 - as a rule, if you get back an unexpected api response, just console log the entire response to see the structure better
