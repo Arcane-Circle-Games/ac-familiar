@@ -14,8 +14,6 @@ import { gmGameCommand } from '../commands/gm-game';
 import { gmBookingsCommand } from '../commands/gm-bookings';
 import { gmStatsCommand } from '../commands/gm-stats';
 import { recordCommand, recordingManager } from '../commands/record';
-import { postSummaryCommand } from '../commands/post-summary';
-import { testAnnouncementsCommand } from '../commands/test-announcements';
 import { leaveGameCommand } from '../commands/leave-game';
 
 export class ArcaneBot {
@@ -98,8 +96,6 @@ export class ArcaneBot {
       gmBookingsCommand,
       gmStatsCommand,
       recordCommand,
-      postSummaryCommand,
-      testAnnouncementsCommand,
       leaveGameCommand
     ];
     

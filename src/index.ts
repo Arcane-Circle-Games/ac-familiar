@@ -2,7 +2,6 @@ import { validateConfig } from './utils/config';
 import { logError, logInfo } from './utils/logger';
 import { ArcaneBot } from './bot';
 import { GameAnnouncementScheduler } from './services/scheduled';
-import { setAnnouncementTestCallback } from './commands/test-announcements';
 
 // Global scheduler reference for cleanup
 let gameScheduler: GameAnnouncementScheduler | null = null;
@@ -25,9 +24,6 @@ async function main() {
     // Start game announcement scheduler
     gameScheduler = new GameAnnouncementScheduler(bot);
     gameScheduler.start();
-
-    // Wire up test command to manually trigger announcements
-    setAnnouncementTestCallback(() => gameScheduler!.checkForNewGames());
 
   } catch (error) {
     logError('❌ Failed to start bot', error as Error);
