@@ -75,23 +75,24 @@ export const gamesCommand: Command = {
           const systemName = typeof game.system === 'object' ? game.system.shortName || game.system.name : game.system;
           const gmName = typeof game.gm === 'object' ? game.gm.displayName : 'Unknown GM';
           const price = game.pricePerSession ? `$${game.pricePerSession}/${game.currency}` : 'Free';
-          
+
           let gameValue = '';
           gameValue += `**System:** ${systemName}\n`;
           gameValue += `**GM:** ${gmName}\n`;
           gameValue += `**Type:** ${game.gameType}\n`;
           gameValue += `**Price:** ${price} per session\n`;
           gameValue += `**Players:** ${game.maxPlayers} max\n`;
-          
+
           if (game.shortDescription) {
-            const description = game.shortDescription.length > 100 
-              ? game.shortDescription.substring(0, 100) + '...' 
+            const description = game.shortDescription.length > 100
+              ? game.shortDescription.substring(0, 100) + '...'
               : game.shortDescription;
             gameValue += `\n*${description}*\n`;
           }
-          
-          gameValue += `\n[View Details](${config.PLATFORM_WEB_URL}/games/${game.id})`;
-          
+
+          gameValue += `\n\n💬 **Join:** \`/join-game game-id:${game.id}\``;
+          gameValue += `\n🌐 [View Details](${config.PLATFORM_WEB_URL}/games/${game.id}) • [Book on Web](${config.PLATFORM_WEB_URL}/games/${game.id}/book)`;
+
           embed.addFields({
             name: `🎮 ${game.title}`,
             value: gameValue,

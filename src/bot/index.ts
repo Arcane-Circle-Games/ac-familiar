@@ -6,6 +6,8 @@ import { pingCommand } from '../commands/ping';
 import { diagnosticsCommand } from '../commands/diagnostics';
 import { linkCommand } from '../commands/link';
 import { gamesCommand } from '../commands/games';
+import { searchGamesCommand } from '../commands/search-games';
+import { joinGameCommand } from '../commands/join-game';
 import { gameInfoCommand, gameInfoCommandData } from '../commands/game-info';
 import { gmProfileCommand } from '../commands/gm-profile';
 import { gmGameCommand } from '../commands/gm-game';
@@ -90,6 +92,8 @@ export class ArcaneBot {
       diagnosticsCommand,
       linkCommand,
       gamesCommand,
+      searchGamesCommand,
+      joinGameCommand,
       gameInfoCommand,
       gmProfileCommand,
       gmGameCommand,

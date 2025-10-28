@@ -248,6 +248,52 @@ export class GameService {
       throw error;
     }
   }
+
+  // Create deferred booking for a game (bot authentication flow)
+  public async createDeferredBooking(
+    gameId: string,
+    data: {
+      applicationMessage?: string;
+      characterConcept?: string;
+    },
+    discordUserId: string
+  ): Promise<any> {
+    try {
+      // Build request body exactly as API expects
+      const requestBody: any = {
+        gameId,
+        discordUserId
+      };
+
+      // Add optional fields only if provided
+      if (data.applicationMessage) {
+        requestBody.applicationMessage = data.applicationMessage;
+      }
+      if (data.characterConcept) {
+        requestBody.characterConcept = data.characterConcept;
+      }
+
+      logInfo('Creating deferred booking for game', {
+        gameId,
+        discordUserId,
+        hasMessage: !!data.applicationMessage,
+        hasCharacter: !!data.characterConcept,
+        requestBody
+      });
+
+      // API will:
+      // - Validate BOT_API_KEY from Authorization header
+      // - Look up user by Discord ID
+      // - Get user's default payment method
+      // - Get game's first future session
+      // - Create deferred booking with payment pre-authorization
+      const response = await apiClient.post(`/bookings/create-deferred`, requestBody);
+      return response.data;
+    } catch (error) {
+      logError('Failed to create deferred booking', error as Error, { gameId, discordUserId });
+      throw error;
+    }
+  }
 }
 
 export const gameService = new GameService();
