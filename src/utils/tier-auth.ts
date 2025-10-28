@@ -8,7 +8,7 @@ import { logDebug } from './logger';
 /**
  * Tiers that have bot access
  */
-export const AUTHORIZED_TIERS = ['Alpha', 'Wizard_Backer'] as const;
+export const AUTHORIZED_TIERS = ['Alpha', 'Wizard_Backer', 'admin'] as const;
 
 export type AuthorizedTier = typeof AUTHORIZED_TIERS[number];
 
