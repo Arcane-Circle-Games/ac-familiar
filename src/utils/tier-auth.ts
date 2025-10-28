@@ -16,7 +16,7 @@ export type AuthorizedTier = typeof AUTHORIZED_TIERS[number];
  * Commands that are exempt from tier checking
  * These commands can be used by anyone, even unlinked users
  */
-export const TIER_EXEMPT_COMMANDS = ['link', 'ping'] as const;
+export const TIER_EXEMPT_COMMANDS = ['link', 'ping', 'diagnostics'] as const;
 
 export type TierExemptCommand = typeof TIER_EXEMPT_COMMANDS[number];
 
