@@ -121,7 +121,7 @@ export class TranscriptionService {
 
       return userTranscript;
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error(`Failed to transcribe audio file: ${wavPath}`, error as Error, {
         userId,
         username
