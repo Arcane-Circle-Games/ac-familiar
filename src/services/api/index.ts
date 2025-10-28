@@ -90,6 +90,11 @@ export class ArcaneCircleAPI {
       throw error;
     }
   }
+
+  // Convenience method: Get user by Discord ID (wraps userService method)
+  public async getUserByDiscordId(discordId: string) {
+    return await this.users.getUserByDiscordId(discordId);
+  }
 }
 
 // Singleton instance
