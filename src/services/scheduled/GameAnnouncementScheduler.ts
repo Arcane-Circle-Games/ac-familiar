@@ -120,6 +120,9 @@ export class GameAnnouncementScheduler {
         return;
       }
 
+      // Send header message
+      await this.sendHeaderMessage();
+
       // Announce each game
       let announced = 0;
       let failed = 0;
@@ -151,6 +154,34 @@ export class GameAnnouncementScheduler {
       logError('GameAnnouncementScheduler: Error in checkForNewGames', error as Error);
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  /**
+   * Send header message before game announcements
+   */
+  private async sendHeaderMessage(): Promise<void> {
+    const channelId = config.GAME_ANNOUNCEMENT_CHANNEL_ID!;
+
+    try {
+      const channel = await this.bot.client.channels.fetch(channelId);
+
+      if (!channel) {
+        throw new Error(`Channel ${channelId} not found`);
+      }
+
+      if (!channel.isTextBased() || !(channel instanceof TextChannel)) {
+        throw new Error(`Channel ${channelId} is not a text channel`);
+      }
+
+      await channel.send('# New Games Looking for Players');
+
+      logDebug('GameAnnouncementScheduler: Sent header message', { channelId });
+    } catch (error) {
+      logError('GameAnnouncementScheduler: Failed to send header message', error as Error, {
+        channelId
+      });
+      // Don't throw - we still want to announce games even if header fails
     }
   }
 

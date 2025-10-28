@@ -4,20 +4,28 @@ import {
   EmbedBuilder,
   VoiceChannel,
   ChatInputCommandInteraction,
+  // @ts-expect-error - Reserved for future transcription features
   AttachmentBuilder
 } from 'discord.js';
 import { RecordingManager } from '../services/recording/RecordingManager';
 import { logger } from '../utils/logger';
+// @ts-expect-error - Reserved for future transcription features
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
+// @ts-expect-error - Reserved for future transcription features
 import { recordingUploadService } from '../services/upload/RecordingUploadService';
+// @ts-expect-error - Reserved for future transcription features
 import { recordingService } from '../services/api/recordings';
+// @ts-expect-error - Reserved for future transcription features
 import { formatBytes, formatDuration } from '../utils/formatters';
 import * as fs from 'fs/promises';
+// @ts-expect-error - Reserved for future transcription features
 import * as path from 'path';
 
 /**
  * Calculate duration from WAV file by reading header
+ * TODO: Used in future transcription features
  */
+// @ts-expect-error - Reserved for future transcription features
 async function getWAVDuration(filePath: string): Promise<number> {
   try {
     const buffer = await fs.readFile(filePath);

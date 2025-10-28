@@ -254,17 +254,17 @@ export class RecordingUploadService {
       };
 
       if (error.response) {
-        errorInfo.status = error.response.status;
-        errorInfo.statusText = error.response.statusText;
-        errorInfo.responseData = error.response.data;
+        errorInfo['status'] = error.response.status;
+        errorInfo['statusText'] = error.response.statusText;
+        errorInfo['responseData'] = error.response.data;
       } else if (error.request) {
-        errorInfo.requestFailed = true;
-        errorInfo.noResponse = true;
+        errorInfo['requestFailed'] = true;
+        errorInfo['noResponse'] = true;
       }
 
       // Add context about which file was being uploaded
       if (error.config?.url) {
-        errorInfo.uploadUrl = error.config.url;
+        errorInfo['uploadUrl'] = error.config.url;
       }
 
       // Create a clean error object to avoid logging the massive axios error with circular refs

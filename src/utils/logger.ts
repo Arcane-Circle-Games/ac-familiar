@@ -10,7 +10,7 @@ function safeStringify(obj: any, indent: number = 2): string {
 
   return JSON.stringify(
     obj,
-    (key, value) => {
+    (_key, value) => {
       // Handle circular references
       if (typeof value === 'object' && value !== null) {
         if (seen.has(value)) {
