@@ -167,19 +167,13 @@ async function handleStartRecording(
   voiceChannel: VoiceChannel,
   member: GuildMember
 ): Promise<void> {
-  const result = await recordingManager.startRecording(voiceChannel, member);
+  await recordingManager.startRecording(voiceChannel, member);
 
   const embed = new EmbedBuilder()
     .setTitle('🎙️ Recording Started')
-    .setDescription(result.message)
+    .setDescription(`Now recording <#${voiceChannel.id}>. Use \`/record stop\` when finished.`)
     .setColor(0x00ff00)
-    .addFields(
-      { name: 'Channel', value: `<#${voiceChannel.id}>`, inline: true },
-      { name: 'Started by', value: `<@${member.id}>`, inline: true },
-      { name: 'Session ID', value: `\`${result.sessionId}\``, inline: false }
-    )
-    .setTimestamp()
-    .setFooter({ text: 'Phase 1 Testing - Audio stored in memory' });
+    .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
 }
@@ -194,70 +188,62 @@ async function handleStopRecording(
 ): Promise<void> {
   const result = await recordingManager.stopRecording(voiceChannel.id, saveFiles, autoTranscribe);
 
+  // Format duration in minutes and seconds
+  const minutes = Math.floor(result.duration / 60);
+  const seconds = result.duration % 60;
+  const durationText = minutes > 0
+    ? `${minutes}m ${seconds}s`
+    : `${seconds}s`;
+
   const embed = new EmbedBuilder()
     .setTitle('🛑 Recording Stopped')
-    .setDescription(result.message)
+    .setDescription(`Recorded ${result.participants} ${result.participants === 1 ? 'person' : 'people'} for ${durationText}`)
     .setColor(0xff0000)
-    .addFields(
-      { name: 'Duration', value: `${result.duration} seconds`, inline: true },
-      { name: 'Participants', value: result.participants.toString(), inline: true }
-    )
     .setTimestamp();
 
-  if (result.exportedRecording) {
-    embed.addFields(
-      { name: 'Output Directory', value: `\`${result.exportedRecording.outputDirectory}\``, inline: false },
-      { name: 'Audio Files', value: result.exportedRecording.tracks.length.toString(), inline: true },
-      { name: 'Total Size', value: formatBytes(result.exportedRecording.totalSize), inline: true }
-    );
+  if (result.exportedRecording && autoUpload) {
+    // Show uploading status
+    embed.addFields({ name: 'Status', value: '📤 Uploading to Arcane Circle...', inline: false });
+    await interaction.editReply({ embeds: [embed] });
 
-    if (result.transcript) {
-      embed.addFields(
-        { name: 'Transcript', value: `${result.transcript.wordCount} words (${(result.transcript.averageConfidence * 100).toFixed(1)}% confidence)`, inline: false }
+    try {
+      const uploadResult = await recordingManager.uploadRecording(
+        result.exportedRecording,
+        voiceChannel,
+        member
       );
-      embed.setFooter({ text: 'Phase 2B - Audio + Transcription saved!' });
-    } else {
-      embed.setFooter({ text: 'Phase 2A - Audio files saved to disk!' });
-    }
 
-    // Auto-upload if requested
-    if (autoUpload) {
-      try {
-        embed.addFields({ name: 'Status', value: '📤 Uploading to platform...', inline: false });
-        await interaction.editReply({ embeds: [embed] });
+      // Update embed with final status
+      embed.spliceFields(0, 1); // Remove status field
 
-        const uploadResult = await recordingManager.uploadRecording(
-          result.exportedRecording,
-          voiceChannel,
-          member
-        );
+      if (uploadResult.success) {
+        embed.setDescription(`✅ Recording uploaded successfully!\n\nRecorded ${result.participants} ${result.participants === 1 ? 'person' : 'people'} for ${durationText}`);
 
-        if (uploadResult.success) {
-          embed.spliceFields(-1, 1); // Remove "Uploading..." field
-          embed.addFields(
-            { name: 'Upload', value: '✅ Uploaded to platform', inline: false },
-            { name: 'Recording ID', value: uploadResult.recordingId || 'N/A', inline: true }
-          );
-          if (uploadResult.viewUrl) {
-            embed.addFields({ name: 'View URL', value: uploadResult.viewUrl, inline: false });
-          }
-          embed.setFooter({ text: 'Recording saved and uploaded!' });
-        } else {
-          embed.spliceFields(-1, 1);
-          embed.addFields({ name: 'Upload', value: `❌ Upload failed: ${uploadResult.error}`, inline: false });
+        if (uploadResult.viewUrl) {
+          embed.addFields({
+            name: '🎧 Listen & Manage',
+            value: uploadResult.viewUrl,
+            inline: false
+          });
         }
-      } catch (error) {
-        logger.error('Auto-upload failed:', error);
-        embed.spliceFields(-1, 1);
+      } else {
+        embed.setDescription(`⚠️ Recording saved but upload failed.\n\nRecorded ${result.participants} ${result.participants === 1 ? 'person' : 'people'} for ${durationText}`);
         embed.addFields({
-          name: 'Upload',
-          value: `❌ Upload error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          name: 'Error',
+          value: uploadResult.error || 'Unknown error',
           inline: false
         });
       }
+    } catch (error) {
+      logger.error('Upload failed:', error);
+      embed.spliceFields(0, 1);
+      embed.setDescription(`⚠️ Recording saved but upload failed.\n\nRecorded ${result.participants} ${result.participants === 1 ? 'person' : 'people'} for ${durationText}`);
+      embed.addFields({
+        name: 'Error',
+        value: error instanceof Error ? error.message : 'Unknown error',
+        inline: false
+      });
     }
-  } else {
-    embed.setFooter({ text: 'Memory only - Use "stop-save" to save files' });
   }
 
   await interaction.editReply({ embeds: [embed] });
