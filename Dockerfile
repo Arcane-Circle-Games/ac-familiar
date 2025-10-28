@@ -10,7 +10,6 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY prisma ./prisma/
 
 # Install dependencies (including dev dependencies for build)
 # Skip optional dependencies (platform-specific Whisper packages)
@@ -18,9 +17,6 @@ RUN npm ci --omit=optional
 
 # Copy source code
 COPY . .
-
-# Generate Prisma client
-RUN npx prisma generate
 
 # Build TypeScript
 RUN npm run build
@@ -41,7 +37,6 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY prisma ./prisma/
 
 # Install production dependencies only
 # Skip optional dependencies (platform-specific Whisper packages)
@@ -49,7 +44,6 @@ RUN npm ci --omit=dev --omit=optional
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
