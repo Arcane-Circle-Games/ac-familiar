@@ -919,6 +919,12 @@ export class BasicRecordingService {
         totalSize: exportedRecording.totalSize,
         outputDirectory: exportedRecording.outputDirectory
       });
+
+      // Include recordingId if available (from init-live)
+      if (session.recordingId) {
+        exportedRecording.recordingId = session.recordingId;
+        logger.info(`Recording ID from init-live: ${session.recordingId}`);
+      }
     }
 
     // Create sessionData object to return (keep original structure for compatibility)

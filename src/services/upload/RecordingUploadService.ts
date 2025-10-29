@@ -337,9 +337,87 @@ export class RecordingUploadService {
     try {
       logger.info(`Starting two-step upload for session ${metadata.sessionId}`, {
         trackCount: exportedRecording.tracks.length,
+        hasRecordingId: !!exportedRecording.recordingId
       });
 
       const startTime = Date.now();
+
+      // Check if this is a live recording (has recordingId from init-live)
+      if (exportedRecording.recordingId) {
+        logger.info(`Using finalize flow for live recording ${exportedRecording.recordingId}`);
+
+        // Build segments array for finalize request
+        const segments: RecordingSegmentWithBlob[] = [];
+
+        // Upload each track/segment individually using segment-upload-url endpoint
+        for (let i = 0; i < exportedRecording.tracks.length; i++) {
+          const track = exportedRecording.tracks[i];
+          if (!track) continue;
+
+          onProgress?.({
+            uploadedBytes: i * (track.fileSize || 0),
+            totalBytes: exportedRecording.totalSize,
+            percentage: Math.round((i / exportedRecording.tracks.length) * 100),
+            currentFile: track.filePath,
+            currentFileIndex: i,
+            totalFiles: exportedRecording.tracks.length
+          });
+
+          // Upload this segment
+          const { blobUrl, blobPath } = await this.uploadSegmentImmediately(
+            exportedRecording.recordingId,
+            track.filePath,
+            {
+              userId: track.metadata.userId,
+              username: track.metadata.username,
+              segmentIndex: track.metadata.segmentIndex ?? i,
+              absoluteStartTime: track.metadata.startTime,
+              absoluteEndTime: track.metadata.endTime,
+              duration: track.metadata.duration,
+              format: track.format
+            }
+          );
+
+          // Add to segments array
+          segments.push({
+            userId: track.metadata.userId,
+            username: track.metadata.username,
+            segmentIndex: track.metadata.segmentIndex ?? i,
+            fileName: track.filePath.split('/').pop() || `segment_${i}.wav`,
+            absoluteStartTime: track.metadata.startTime,
+            absoluteEndTime: track.metadata.endTime,
+            duration: track.metadata.duration ?? 0,
+            fileSize: track.fileSize,
+            format: track.format,
+            blobUrl,
+            filePath: blobPath
+          });
+        }
+
+        // Finalize the live recording
+        const finalizeResponse = await this.finalizeRecording(
+          exportedRecording.recordingId,
+          exportedRecording.sessionEndTime,
+          segments
+        );
+
+        const uploadDuration = Date.now() - startTime;
+        logger.info(`Live recording finalized in ${uploadDuration}ms`, {
+          sessionId: metadata.sessionId,
+          recordingId: finalizeResponse.recording.id
+        });
+
+        return {
+          success: true,
+          recordingId: finalizeResponse.recording.id,
+          downloadUrls: finalizeResponse.recording.downloadUrls,
+          viewUrl: `${config.PLATFORM_WEB_URL}/dashboard/recordings/${finalizeResponse.recording.id}`,
+          estimatedProcessingTime: finalizeResponse.recording.estimatedProcessingTime,
+        };
+      }
+
+      // Batch upload flow (no recordingId - not a live recording)
+      logger.info(`Using batch upload flow (no live recording ID)`);
 
       // Step 1: Initialize upload and get pre-signed URLs
       const initResponse = await this.initializeUpload(exportedRecording, metadata);

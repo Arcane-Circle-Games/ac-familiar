@@ -14,6 +14,7 @@ export interface ExportedRecording {
   outputDirectory: string;
   totalSize: number;
   participantCount: number;
+  recordingId?: string; // Platform API recording ID (from init-live)
 }
 
 export interface ExportOptions extends AudioProcessingOptions {
