@@ -70,7 +70,7 @@ export class RecordingManager {
       // Track the session
       this.activeSessions.set(channelId, {
         sessionId,
-        platformSessionId,
+        ...(platformSessionId !== undefined && { platformSessionId }),
         channelId,
         startedBy: requestedBy.id,
         startedAt: new Date()
@@ -358,7 +358,7 @@ export class RecordingManager {
       const duration = exportedRecording.sessionEndTime - exportedRecording.sessionStartTime;
       const metadata: RecordingUploadMetadata = {
         sessionId: exportedRecording.sessionId,
-        platformSessionId: activeSession?.platformSessionId,
+        ...(activeSession?.platformSessionId !== undefined && { platformSessionId: activeSession.platformSessionId }),
         guildId: voiceChannel.guild.id,
         guildName: voiceChannel.guild.name,
         channelId: voiceChannel.id,
