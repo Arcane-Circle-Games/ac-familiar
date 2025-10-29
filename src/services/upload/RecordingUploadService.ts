@@ -579,10 +579,10 @@ export class RecordingUploadService {
         });
         return {
           found: true,
-          recordingId: response.data.recordingId,
-          sessionId: response.data.sessionId,
-          status: response.data.status,
-          startedAt: response.data.startedAt,
+          ...(response.data.recordingId !== undefined && { recordingId: response.data.recordingId }),
+          ...(response.data.sessionId !== undefined && { sessionId: response.data.sessionId }),
+          ...(response.data.status !== undefined && { status: response.data.status }),
+          ...(response.data.startedAt !== undefined && { startedAt: response.data.startedAt }),
         };
       }
 
