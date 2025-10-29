@@ -321,6 +321,28 @@ export class RecordingUploadService {
       logger.info(`Upload completed successfully for recording ${recordingId}`);
       return response.data;
     } catch (error: any) {
+      // Check if this is the "Recording not in uploading state" error
+      if (error.response?.data?.error?.includes('not in uploading state') ||
+          error.response?.data?.error?.includes('Recording not in uploading state')) {
+        const currentStatus = error.response?.data?.currentStatus || 'unknown';
+        logger.error(
+          `❌ Cannot complete upload - recording ${recordingId} is in '${currentStatus}' state, not 'uploading'.\n` +
+          `This usually means the recording was initialized as a live recording but the upload flow is trying to use batch upload.\n` +
+          `The recording should have been finalized using the finalize endpoint, not the complete endpoint.`
+        );
+
+        // Create a more helpful error message
+        const helpfulError = new Error(
+          `Recording ${recordingId} is in '${currentStatus}' state. ` +
+          `This recording should use the finalize flow, not the batch upload flow. ` +
+          `This is likely because the recording was started as a live recording but the recordingId wasn't properly tracked.`
+        );
+        (helpfulError as any).originalError = error;
+        (helpfulError as any).recordingId = recordingId;
+        (helpfulError as any).currentStatus = currentStatus;
+        throw helpfulError;
+      }
+
       logger.error(`Failed to complete upload for recording ${recordingId}`, error);
       throw error;
     }
