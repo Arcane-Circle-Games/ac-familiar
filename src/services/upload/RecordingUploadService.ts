@@ -545,6 +545,63 @@ export class RecordingUploadService {
   // ========================================================================
 
   /**
+   * Check for active (live) recordings in a Discord channel
+   * Used for crash recovery - detects orphaned recordings from previous bot crashes
+   */
+  async checkForActiveRecording(
+    guildId: string,
+    channelId: string
+  ): Promise<{
+    found: boolean;
+    recordingId?: string;
+    sessionId?: string;
+    status?: RecordingStatus;
+    startedAt?: string;
+  }> {
+    try {
+      logger.info(`Checking for active recording in channel ${channelId}`);
+
+      const response = await apiClient.get<{
+        found: boolean;
+        recordingId?: string;
+        sessionId?: string;
+        status?: RecordingStatus;
+        startedAt?: string;
+        participantCount?: number;
+        createdAt?: string;
+      }>(`/recordings/active?guildId=${guildId}&channelId=${channelId}`);
+
+      if (response.data && response.data.found) {
+        logger.info(`Found active recording: ${response.data.recordingId}`, {
+          sessionId: response.data.sessionId,
+          status: response.data.status,
+          startedAt: response.data.startedAt,
+        });
+        return {
+          found: true,
+          recordingId: response.data.recordingId,
+          sessionId: response.data.sessionId,
+          status: response.data.status,
+          startedAt: response.data.startedAt,
+        };
+      }
+
+      logger.info(`No active recording found in channel ${channelId}`);
+      return { found: false };
+    } catch (error: any) {
+      // 404 means no active recording found
+      if (error.response && error.response.status === 404) {
+        logger.info(`No active recording found in channel ${channelId}`);
+        return { found: false };
+      }
+
+      logger.error(`Failed to check for active recording in channel ${channelId}`, error);
+      // Don't throw - return not found on error
+      return { found: false };
+    }
+  }
+
+  /**
    * Initialize a live recording session (called when recording starts)
    */
   async initLiveRecording(

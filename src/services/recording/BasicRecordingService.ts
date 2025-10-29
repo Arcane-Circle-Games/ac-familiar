@@ -255,17 +255,40 @@ export class BasicRecordingService {
       uploadedSegments: []
     };
 
-    // Initialize live recording via API (streaming upload flow)
+    // Check for active recordings (crash recovery)
     try {
-      const initResponse = await recordingUploadService.initLiveRecording(
-        sessionId,
+      const activeRecording = await recordingUploadService.checkForActiveRecording(
         guildId,
-        guildName,
-        channelId,
-        userId
+        channelId
       );
-      metadata.recordingId = initResponse.recordingId;
-      logger.info(`Live recording initialized with ID: ${initResponse.recordingId}`);
+
+      if (activeRecording.found) {
+        // Found orphaned recording from previous bot crash - resume it
+        logger.warn(`⚠️ Detected orphaned recording from previous session`, {
+          recordingId: activeRecording.recordingId,
+          sessionId: activeRecording.sessionId,
+          status: activeRecording.status,
+          startedAt: activeRecording.startedAt,
+        });
+
+        // Use existing recording ID and session ID
+        metadata.recordingId = activeRecording.recordingId!;
+        // Note: We're not changing the sessionId here because the new UUID was already generated
+        // The API will handle this as a continuation of the old recording via recordingId
+
+        logger.info(`Resuming recording with ID: ${activeRecording.recordingId}`);
+      } else {
+        // No active recording - initialize new live recording via API (streaming upload flow)
+        const initResponse = await recordingUploadService.initLiveRecording(
+          sessionId,
+          guildId,
+          guildName,
+          channelId,
+          userId
+        );
+        metadata.recordingId = initResponse.recordingId;
+        logger.info(`Live recording initialized with ID: ${initResponse.recordingId}`);
+      }
     } catch (error) {
       logger.error(`Failed to init live recording via API, continuing without streaming uploads`, error);
       // Continue without streaming uploads - will fall back to batch upload at end
