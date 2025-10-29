@@ -231,7 +231,8 @@ export class BasicRecordingService {
     guildName: string,
     guild: Guild,
     guildId: string,
-    userId: string
+    userId: string,
+    platformSessionId?: string
   ): Promise<void> {
     logger.info(`Starting recording session: ${sessionId}`);
 
@@ -284,7 +285,8 @@ export class BasicRecordingService {
           guildId,
           guildName,
           channelId,
-          userId
+          userId,
+          platformSessionId
         );
         metadata.recordingId = initResponse.recordingId;
         logger.info(`Live recording initialized with ID: ${initResponse.recordingId}`);

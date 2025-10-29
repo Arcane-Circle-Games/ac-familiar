@@ -10,6 +10,7 @@ export interface RecordingParticipant {
 
 export interface RecordingUploadMetadata {
   sessionId: string; // UUID from bot
+  platformSessionId?: string; // Platform game session ID (if linked)
   guildId: string; // Discord guild ID
   guildName: string; // Discord guild name
   channelId: string; // Discord voice channel ID
@@ -39,6 +40,7 @@ export interface RecordingSegment {
 
 export interface RecordingUploadInitRequest {
   sessionId: string;
+  platformSessionId?: string; // Platform game session ID (if linked)
   guildId: string;
   guildName: string;
   channelId: string;
@@ -227,6 +229,7 @@ export interface WebhookHeaders {
 
 export interface RecordingInitLiveRequest {
   sessionId: string;
+  platformSessionId?: string; // Platform game session ID (if linked)
   guildId: string;
   guildName: string;
   channelId: string;

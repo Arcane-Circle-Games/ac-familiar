@@ -4,11 +4,14 @@ import {
   EmbedBuilder,
   VoiceChannel,
   ChatInputCommandInteraction,
+  AutocompleteInteraction,
   // @ts-expect-error - Reserved for future transcription features
   AttachmentBuilder
 } from 'discord.js';
 import { RecordingManager } from '../services/recording/RecordingManager';
 import { logger } from '../utils/logger';
+import { arcaneAPI } from '../services/api';
+import { config } from '../utils/config';
 // @ts-expect-error - Reserved for future transcription features
 import { transcriptionStorage } from '../services/storage/TranscriptionStorage';
 // @ts-expect-error - Reserved for future transcription features
@@ -98,6 +101,20 @@ export const recordCommand = {
         { name: 'Start Recording', value: 'start' },
         { name: 'Stop Recording', value: 'stop' }
       ]
+    },
+    {
+      name: 'game',
+      description: 'Select one of your games',
+      type: 3, // STRING type
+      required: false,
+      autocomplete: true
+    },
+    {
+      name: 'session',
+      description: 'Select a session from the chosen game',
+      type: 3, // STRING type
+      required: false,
+      autocomplete: true
     }
   ],
 
@@ -159,6 +176,96 @@ export const recordCommand = {
         });
       }
     }
+  },
+
+  async autocomplete(interaction: AutocompleteInteraction): Promise<void> {
+    const focusedOption = interaction.options.getFocused(true);
+
+    try {
+      // Get platform user
+      const user = await arcaneAPI.getUserByDiscordId(interaction.user.id);
+      if (!user) {
+        return interaction.respond([
+          { name: 'Link your Discord account first (/link)', value: 'not_linked' }
+        ]);
+      }
+
+      // STEP 1: Game autocomplete
+      if (focusedOption.name === 'game') {
+        const games = await arcaneAPI.games.listGames({
+          gmId: user.id,
+          status: 'PUBLISHED'
+        });
+
+        if (!games || games.length === 0) {
+          return interaction.respond([
+            { name: 'No games found', value: 'no_games' }
+          ]);
+        }
+
+        const choices = games
+          .map(game => ({
+            name: game.title.substring(0, 100),
+            value: game.id
+          }))
+          .filter(choice =>
+            choice.name.toLowerCase().includes(focusedOption.value.toLowerCase())
+          )
+          .slice(0, 25);
+
+        return interaction.respond(choices);
+      }
+
+      // STEP 2: Session autocomplete (filtered by selected game)
+      if (focusedOption.name === 'session') {
+        const selectedGameId = interaction.options.getString('game');
+
+        if (!selectedGameId) {
+          return interaction.respond([
+            { name: 'Select a game first', value: 'no_game_selected' }
+          ]);
+        }
+
+        const sessions = await arcaneAPI.sessions.getGameSessions(
+          selectedGameId,
+          interaction.user.id
+        );
+
+        // Filter to scheduled/active only
+        const activeSessions = sessions.filter(s =>
+          s.status === 'scheduled' || s.status === 'active'
+        );
+
+        if (activeSessions.length === 0) {
+          return interaction.respond([
+            { name: 'No sessions found for this game', value: 'no_sessions' }
+          ]);
+        }
+
+        const choices = activeSessions.map(session => {
+          const date = new Date(session.scheduledFor).toLocaleDateString();
+          const sessionNum = session.sessionNumber || '?';
+          const name = `Session ${sessionNum} - ${date}`;
+
+          return {
+            name: name.substring(0, 100),
+            value: session.id
+          };
+        })
+        .filter(choice =>
+          choice.name.toLowerCase().includes(focusedOption.value.toLowerCase())
+        )
+        .slice(0, 25);
+
+        return interaction.respond(choices);
+      }
+
+    } catch (error) {
+      logger.error('Autocomplete error:', error);
+      return interaction.respond([
+        { name: 'Error loading data', value: 'error' }
+      ]);
+    }
   }
 };
 
@@ -167,13 +274,30 @@ async function handleStartRecording(
   voiceChannel: VoiceChannel,
   member: GuildMember
 ): Promise<void> {
-  await recordingManager.startRecording(voiceChannel, member);
+  const sessionId = (interaction as ChatInputCommandInteraction)
+    .options.getString('session', false);
+
+  // Validate session if provided
+  let validSessionId: string | undefined;
+  if (sessionId && !['not_linked', 'no_game_selected', 'no_sessions', 'error', 'no_games'].includes(sessionId)) {
+    validSessionId = sessionId;
+  }
+
+  await recordingManager.startRecording(voiceChannel, member, validSessionId);
 
   const embed = new EmbedBuilder()
     .setTitle('🎙️ Recording Started')
     .setDescription(`Now recording <#${voiceChannel.id}>. Use \`/record stop\` when finished.`)
     .setColor(0x00ff00)
     .setTimestamp();
+
+  if (validSessionId) {
+    embed.addFields({
+      name: '🎮 Linked Session',
+      value: `[View Session](${config.PLATFORM_WEB_URL}/sessions/${validSessionId})`,
+      inline: false
+    });
+  }
 
   await interaction.editReply({ embeds: [embed] });
 }

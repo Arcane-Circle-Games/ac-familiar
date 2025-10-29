@@ -609,13 +609,17 @@ export class RecordingUploadService {
     guildId: string,
     guildName: string,
     channelId: string,
-    userId: string
+    userId: string,
+    platformSessionId?: string
   ): Promise<RecordingInitLiveResponse> {
     try {
-      logger.info(`Initializing live recording session ${sessionId}`);
+      logger.info(`Initializing live recording session ${sessionId}`, {
+        platformSessionId
+      });
 
       const request: RecordingInitLiveRequest = {
         sessionId,
+        ...(platformSessionId !== undefined && { platformSessionId }),
         guildId,
         guildName,
         channelId,
