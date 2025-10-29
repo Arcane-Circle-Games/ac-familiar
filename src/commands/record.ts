@@ -231,9 +231,9 @@ export const recordCommand = {
           interaction.user.id
         );
 
-        // Filter to scheduled/active only
+        // Filter to scheduled/active only (API returns uppercase status)
         const activeSessions = sessions.filter(s =>
-          s.status === 'scheduled' || s.status === 'active'
+          s.status.toLowerCase() === 'scheduled' || s.status.toLowerCase() === 'active'
         );
 
         if (activeSessions.length === 0) {
@@ -243,7 +243,9 @@ export const recordCommand = {
         }
 
         const choices = activeSessions.map(session => {
-          const date = new Date(session.scheduledFor).toLocaleDateString();
+          // API returns scheduledTime, not scheduledFor
+          const scheduledDate = (session as any).scheduledTime || session.scheduledFor;
+          const date = new Date(scheduledDate).toLocaleDateString();
           const sessionNum = session.sessionNumber || '?';
           const name = `Session ${sessionNum} - ${date}`;
 
