@@ -727,16 +727,36 @@ export class RecordingUploadService {
         recordedAt: new Date().toISOString(),
       };
 
-      const response = await apiClient.post<{ success: boolean; data: RecordingInitLiveResponse }>(
+      const response = await apiClient.post<{ success: boolean; data: RecordingInitLiveResponse } | RecordingInitLiveResponse>(
         '/recordings/init-live',
         request
       );
 
-      if (!response.data || !response.data.data) {
+      if (!response.data) {
         throw new Error('No data in init-live response');
       }
 
-      const result = response.data.data;
+      // Handle both wrapped and unwrapped response formats
+      // Wrapped format: { success: boolean, data: { recordingId, ... } }
+      // Unwrapped format: { recordingId, ... }
+      let result: RecordingInitLiveResponse;
+      if ('data' in response.data && response.data.data) {
+        // Wrapped format
+        result = response.data.data;
+        logger.debug('Parsed wrapped init-live response format');
+      } else if ('recordingId' in response.data) {
+        // Unwrapped format (API returns data directly)
+        result = response.data as RecordingInitLiveResponse;
+        logger.debug('Parsed unwrapped init-live response format');
+      } else {
+        // Log the actual response structure to help debug
+        logger.error('Unexpected init-live response structure', {
+          responseKeys: Object.keys(response.data),
+          responseSample: JSON.stringify(response.data).substring(0, 200)
+        });
+        throw new Error('Unexpected init-live response structure');
+      }
+
       logger.info(`Live recording initialized with ID: ${result.recordingId}`);
       return result;
     } catch (error: any) {
@@ -790,16 +810,29 @@ export class RecordingUploadService {
         format: metadata.format,
       };
 
-      const urlResponse = await apiClient.post<{ success: boolean; data: SegmentUploadUrlResponse }>(
+      const urlResponse = await apiClient.post<{ success: boolean; data: SegmentUploadUrlResponse } | SegmentUploadUrlResponse>(
         `/recordings/${recordingId}/segment-upload-url`,
         urlRequest
       );
 
-      if (!urlResponse.data || !urlResponse.data.data) {
+      if (!urlResponse.data) {
         throw new Error('No upload URL in response');
       }
 
-      const { uploadUrl, blobPath } = urlResponse.data.data;
+      // Handle both wrapped and unwrapped response formats
+      let urlData: SegmentUploadUrlResponse;
+      if ('data' in urlResponse.data && urlResponse.data.data) {
+        urlData = urlResponse.data.data;
+      } else if ('uploadUrl' in urlResponse.data) {
+        urlData = urlResponse.data as SegmentUploadUrlResponse;
+      } else {
+        logger.error('Unexpected segment-upload-url response structure', {
+          responseKeys: Object.keys(urlResponse.data)
+        });
+        throw new Error('Unexpected segment-upload-url response structure');
+      }
+
+      const { uploadUrl, blobPath } = urlData;
 
       logger.debug(`Got upload URL for segment ${metadata.segmentIndex}`, {
         blobPath,
@@ -870,16 +903,28 @@ export class RecordingUploadService {
         segments,
       };
 
-      const response = await apiClient.post<{ success: boolean; data: RecordingFinalizeResponse }>(
+      const response = await apiClient.post<{ success: boolean; data: RecordingFinalizeResponse } | RecordingFinalizeResponse>(
         `/recordings/${recordingId}/finalize`,
         request
       );
 
-      if (!response.data || !response.data.data) {
+      if (!response.data) {
         throw new Error('No data in finalize response');
       }
 
-      const result = response.data.data;
+      // Handle both wrapped and unwrapped response formats
+      let result: RecordingFinalizeResponse;
+      if ('data' in response.data && response.data.data) {
+        result = response.data.data;
+      } else if ('recording' in response.data) {
+        result = response.data as RecordingFinalizeResponse;
+      } else {
+        logger.error('Unexpected finalize response structure', {
+          responseKeys: Object.keys(response.data)
+        });
+        throw new Error('Unexpected finalize response structure');
+      }
+
       logger.info(`Recording ${recordingId} finalized successfully`);
       return result;
     } catch (error: any) {
