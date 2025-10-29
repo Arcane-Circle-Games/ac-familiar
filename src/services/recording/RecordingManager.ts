@@ -13,6 +13,7 @@ import * as path from 'path';
 
 interface ActiveSession {
   sessionId: string;
+  platformSessionId?: string;
   channelId: string;
   startedBy: string;
   startedAt: Date;
@@ -28,7 +29,8 @@ export class RecordingManager {
    */
   async startRecording(
     voiceChannel: VoiceChannel,
-    requestedBy: GuildMember
+    requestedBy: GuildMember,
+    platformSessionId?: string
   ): Promise<{ sessionId: string; message: string }> {
     const channelId = voiceChannel.id;
 
@@ -61,12 +63,14 @@ export class RecordingManager {
         guildName,
         guild,
         guildId,
-        requestedBy.id
+        requestedBy.id,
+        platformSessionId
       );
 
       // Track the session
       this.activeSessions.set(channelId, {
         sessionId,
+        platformSessionId,
         channelId,
         startedBy: requestedBy.id,
         startedAt: new Date()
@@ -347,10 +351,14 @@ export class RecordingManager {
     try {
       logger.info(`Uploading recording for session ${exportedRecording.sessionId}`);
 
+      // Get platformSessionId from active session
+      const activeSession = this.activeSessions.get(voiceChannel.id);
+
       // Build metadata
       const duration = exportedRecording.sessionEndTime - exportedRecording.sessionStartTime;
       const metadata: RecordingUploadMetadata = {
         sessionId: exportedRecording.sessionId,
+        platformSessionId: activeSession?.platformSessionId,
         guildId: voiceChannel.guild.id,
         guildName: voiceChannel.guild.name,
         channelId: voiceChannel.id,
