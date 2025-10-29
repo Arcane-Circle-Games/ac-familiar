@@ -201,8 +201,17 @@ async function handleStopRecording(
     .setColor(0xff0000)
     .setTimestamp();
 
-  if (result.exportedRecording && autoUpload) {
-    // Show uploading status
+  // Check if recording was already uploaded via streaming upload flow
+  if (result.recordingId && result.viewUrl) {
+    // Recording already uploaded and finalized via streaming
+    embed.setDescription(`✅ Recording uploaded successfully!\n\nRecorded ${result.participants} ${result.participants === 1 ? 'person' : 'people'} for ${durationText}`);
+    embed.addFields({
+      name: '🎧 Listen & Manage',
+      value: result.viewUrl,
+      inline: false
+    });
+  } else if (result.exportedRecording && autoUpload) {
+    // Batch upload flow (fallback or old implementation)
     embed.addFields({ name: 'Status', value: '📤 Uploading to Arcane Circle...', inline: false });
     await interaction.editReply({ embeds: [embed] });
 

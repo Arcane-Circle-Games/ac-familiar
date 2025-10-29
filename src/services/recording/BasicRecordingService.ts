@@ -4,14 +4,19 @@ import OpusScript from 'opusscript';
 import { Guild } from 'discord.js';
 import { logger } from '../../utils/logger';
 import { multiTrackExporter, ExportedRecording } from '../processing/MultiTrackExporter';
-import { AudioProcessingOptions } from '../processing/AudioProcessor';
+import { AudioProcessingOptions, audioProcessor } from '../processing/AudioProcessor';
 import { config } from '../../utils/config';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import { recordingUploadService } from '../upload/RecordingUploadService';
+import { RecordingSegmentWithBlob } from '../../types/recording-api';
 
 interface AudioSegment {
   userId: string;
   username: string;
   segmentIndex: number;
-  bufferChunks: Buffer[];
+  bufferChunks: Buffer[]; // Temporary storage while recording current segment
+  filePath?: string;      // File path once written to disk
   absoluteStartTime: number; // Unix timestamp (ms)
   absoluteEndTime?: number;  // Unix timestamp (ms)
   duration?: number;         // Duration in ms
@@ -40,6 +45,9 @@ interface SessionMetadata {
   endTime?: number;
   userRecordings: Map<string, UserRecording>;
   participantCount: number;
+  outputDirectory: string; // Directory for storing segment files (temporary)
+  recordingId?: string; // Database recording ID from API (for streaming uploads)
+  uploadedSegments: RecordingSegmentWithBlob[]; // Track all uploaded segments
 }
 
 /**
@@ -87,6 +95,131 @@ class OpusDecoderStream extends Transform {
 
 export class BasicRecordingService {
   private activeSessions: Map<string, SessionMetadata> = new Map();
+  private lastMemoryLog: number = 0; // Track last memory log time
+
+  /**
+   * Write segment to disk, upload to cloud, and delete local file
+   */
+  private async writeAndUploadSegment(
+    session: SessionMetadata,
+    segment: AudioSegment
+  ): Promise<void> {
+    if (!segment.bufferChunks || segment.bufferChunks.length === 0) {
+      logger.warn(`Skipping empty segment ${segment.segmentIndex} for user ${segment.userId}`);
+      return;
+    }
+
+    if (!segment.absoluteEndTime || !segment.duration) {
+      logger.warn(`Skipping incomplete segment ${segment.segmentIndex} for user ${segment.userId}`);
+      return;
+    }
+
+    try {
+      // Step 1: Convert PCM buffers to WAV file
+      const sanitizedUsername = this.sanitizeFilename(segment.username);
+      const userDir = path.join(session.outputDirectory, sanitizedUsername);
+      await fs.mkdir(userDir, { recursive: true });
+
+      const segmentFileName = `segment_${segment.segmentIndex.toString().padStart(3, '0')}.wav`;
+      const tempFilePath = path.join(userDir, segmentFileName);
+
+      logger.debug(`Writing segment ${segment.segmentIndex} to disk`, {
+        userId: segment.userId,
+        username: segment.username,
+        chunks: segment.bufferChunks.length,
+        tempFilePath
+      });
+
+      // Use audioProcessor to convert PCM to WAV
+      const processedTrack = await audioProcessor.convertPCMToWAV(
+        segment.bufferChunks,
+        {
+          userId: segment.userId,
+          username: segment.username,
+          startTime: segment.absoluteStartTime,
+          endTime: segment.absoluteEndTime,
+          sampleRate: 48000,
+          channels: 2,
+          segmentIndex: segment.segmentIndex
+        },
+        {
+          format: 'wav',
+          outputDir: userDir,
+          guildName: session.guildName,
+          sessionStartTime: session.startTime
+        }
+      );
+
+      logger.info(`Segment ${segment.segmentIndex} written to disk`, {
+        filePath: processedTrack.filePath,
+        fileSize: processedTrack.fileSize
+      });
+
+      // Step 2: Upload to cloud if recordingId available
+      if (session.recordingId) {
+        try {
+          const { blobUrl } = await recordingUploadService.uploadSegmentImmediately(
+            session.recordingId,
+            processedTrack.filePath,
+            {
+              userId: segment.userId,
+              username: segment.username,
+              segmentIndex: segment.segmentIndex,
+              absoluteStartTime: segment.absoluteStartTime,
+              absoluteEndTime: segment.absoluteEndTime,
+              duration: segment.duration,
+              format: 'wav'
+            }
+          );
+
+          // Store uploaded segment metadata
+          const uploadedSegment: RecordingSegmentWithBlob = {
+            userId: segment.userId,
+            username: segment.username,
+            segmentIndex: segment.segmentIndex,
+            fileName: segmentFileName,
+            absoluteStartTime: segment.absoluteStartTime,
+            absoluteEndTime: segment.absoluteEndTime,
+            duration: segment.duration,
+            fileSize: processedTrack.fileSize,
+            format: 'wav',
+            blobUrl,
+            filePath: `${sanitizedUsername}/${segmentFileName}`
+          };
+
+          session.uploadedSegments.push(uploadedSegment);
+
+          logger.info(`Segment ${segment.segmentIndex} uploaded to cloud`, {
+            blobUrl: blobUrl.substring(0, 50) + '...'
+          });
+
+          // Step 3: Delete local file after successful upload
+          await fs.unlink(processedTrack.filePath);
+          logger.debug(`Deleted local file after upload: ${processedTrack.filePath}`);
+
+        } catch (uploadError) {
+          logger.error(`Failed to upload segment ${segment.segmentIndex}, keeping local file`, uploadError);
+          // Keep the local file, will try batch upload at the end
+        }
+      } else {
+        logger.debug(`No recordingId, keeping segment ${segment.segmentIndex} on disk for batch upload`);
+      }
+
+    } catch (error) {
+      logger.error(`Failed to write/upload segment ${segment.segmentIndex}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sanitize filename to remove invalid characters
+   */
+  private sanitizeFilename(filename: string): string {
+    return filename
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .substring(0, 50);
+  }
 
   /**
    * Start recording a voice session
@@ -96,13 +229,19 @@ export class BasicRecordingService {
     voiceReceiver: VoiceReceiver,
     channelId: string,
     guildName: string,
-    guild: Guild
+    guild: Guild,
+    guildId: string,
+    userId: string
   ): Promise<void> {
     logger.info(`Starting recording session: ${sessionId}`);
 
     if (this.activeSessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} is already being recorded`);
     }
+
+    // Create temporary output directory for segment files
+    const outputDirectory = path.join('/tmp/recordings', sessionId);
+    await fs.mkdir(outputDirectory, { recursive: true });
 
     const metadata: SessionMetadata = {
       sessionId,
@@ -111,8 +250,26 @@ export class BasicRecordingService {
       guild,
       startTime: Date.now(),
       userRecordings: new Map(),
-      participantCount: 0
+      participantCount: 0,
+      outputDirectory,
+      uploadedSegments: []
     };
+
+    // Initialize live recording via API (streaming upload flow)
+    try {
+      const initResponse = await recordingUploadService.initLiveRecording(
+        sessionId,
+        guildId,
+        guildName,
+        channelId,
+        userId
+      );
+      metadata.recordingId = initResponse.recordingId;
+      logger.info(`Live recording initialized with ID: ${initResponse.recordingId}`);
+    } catch (error) {
+      logger.error(`Failed to init live recording via API, continuing without streaming uploads`, error);
+      // Continue without streaming uploads - will fall back to batch upload at end
+    }
 
     this.activeSessions.set(sessionId, metadata);
 
@@ -287,6 +444,23 @@ export class BasicRecordingService {
         const currentTime = Date.now() - session.startTime; // ms since session start
         const silenceThreshold = config.RECORDING_SILENCE_THRESHOLD;
 
+        // Log memory usage periodically (every 30 seconds)
+        const now = Date.now();
+        if (now - this.lastMemoryLog > 30000) {
+          const memUsage = process.memoryUsage();
+          const sessionMemory = this.getSessionMemoryUsage(sessionId);
+          logger.info(`Memory usage update`, {
+            sessionId,
+            heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
+            heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
+            rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
+            sessionBuffers: `${Math.round(sessionMemory / 1024 / 1024)}MB`,
+            uploadedSegments: session.uploadedSegments.length,
+            activeUsers: session.userRecordings.size
+          });
+          this.lastMemoryLog = now;
+        }
+
         if (userRecording.currentSegment === null) {
           // Start new segment (first speech or after silence)
           userRecording.currentSegment = {
@@ -300,18 +474,35 @@ export class BasicRecordingService {
 
           logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
         } else if (currentTime - userRecording.lastChunkTime > silenceThreshold) {
-          // Gap detected - finalize current segment and start new one
+          // Gap detected - finalize current segment, upload it, and start new one
           const prevSegment = userRecording.currentSegment;
           prevSegment.absoluteEndTime = session.startTime + userRecording.lastChunkTime;
           prevSegment.duration = prevSegment.absoluteEndTime - prevSegment.absoluteStartTime;
 
-          // Only keep segments that meet minimum duration requirement
+          // Only process segments that meet minimum duration requirement
           if (prevSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
-            userRecording.completedSegments.push(prevSegment);
             logger.debug(
-              `Finalized segment ${prevSegment.segmentIndex} for user ${userId}: ` +
+              `Finalizing segment ${prevSegment.segmentIndex} for user ${userId}: ` +
               `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}`
             );
+
+            // Copy bufferChunks before clearing them
+            const bufferChunksCopy = [...prevSegment.bufferChunks];
+            const segmentCopy = { ...prevSegment, bufferChunks: bufferChunksCopy };
+
+            // Clear original buffers from memory immediately
+            prevSegment.bufferChunks = [];
+
+            // Write to disk and upload to cloud (async, don't wait)
+            this.writeAndUploadSegment(session, segmentCopy)
+              .then(() => {
+                logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded and memory cleared`);
+              })
+              .catch((error) => {
+                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, error);
+                // Add to completed segments for batch upload fallback
+                userRecording.completedSegments.push(segmentCopy);
+              });
           } else {
             logger.debug(
               `Discarded segment ${prevSegment.segmentIndex} for user ${userId}: ` +
@@ -536,11 +727,25 @@ export class BasicRecordingService {
 
         // Only keep segments that meet minimum duration requirement
         if (currentSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
-          userRecording.completedSegments.push(currentSegment);
           logger.debug(
             `Finalized final segment ${currentSegment.segmentIndex} for user ${userId}: ` +
             `duration=${currentSegment.duration}ms, chunks=${currentSegment.bufferChunks.length}`
           );
+
+          // If using streaming uploads, upload final segment immediately
+          if (session.recordingId) {
+            try {
+              await this.writeAndUploadSegment(session, currentSegment);
+              logger.info(`Final segment ${currentSegment.segmentIndex} uploaded`);
+            } catch (error) {
+              logger.error(`Failed to upload final segment ${currentSegment.segmentIndex}`, error);
+              // Add to completed segments for fallback
+              userRecording.completedSegments.push(currentSegment);
+            }
+          } else {
+            // No streaming upload, keep for batch export
+            userRecording.completedSegments.push(currentSegment);
+          }
         } else {
           logger.debug(
             `Discarded final segment ${currentSegment.segmentIndex} for user ${userId}: ` +
@@ -575,55 +780,121 @@ export class BasicRecordingService {
     const duration = session.endTime - session.startTime;
     logger.info(`Recording session ${sessionId} stopped. Duration: ${duration}ms, Users: ${session.participantCount}`);
 
-    // Convert user recordings with segments to array format for export
-    const segments: Array<{
-      userId: string;
-      username: string;
-      segmentIndex: number;
-      startTime: number;
-      endTime: number;
-      bufferChunks: Buffer[];
-    }> = [];
+    let exportedRecording: ExportedRecording;
 
-    for (const userRecording of session.userRecordings.values()) {
-      if (userRecording.endTime !== undefined) {
-        for (const segment of userRecording.completedSegments) {
-          if (segment.absoluteEndTime !== undefined) {
-            segments.push({
-              userId: segment.userId,
-              username: segment.username,
-              segmentIndex: segment.segmentIndex,
-              startTime: segment.absoluteStartTime,
-              endTime: segment.absoluteEndTime,
-              bufferChunks: segment.bufferChunks
-            });
+    // Check if we used streaming uploads
+    if (session.recordingId && session.uploadedSegments.length > 0) {
+      logger.info(`Finalizing recording via API (streaming upload mode)`, {
+        recordingId: session.recordingId,
+        uploadedSegments: session.uploadedSegments.length
+      });
+
+      // Finalize via API
+      try {
+        const finalizeResponse = await recordingUploadService.finalizeRecording(
+          session.recordingId,
+          session.endTime,
+          session.uploadedSegments
+        );
+
+        logger.info(`Recording finalized successfully`, {
+          recordingId: finalizeResponse.recording.id,
+          segmentCount: finalizeResponse.recording.segmentCount
+        });
+
+        // Create a mock ExportedRecording for compatibility
+        exportedRecording = {
+          sessionId: session.sessionId,
+          sessionStartTime: session.startTime,
+          sessionEndTime: session.endTime,
+          tracks: session.uploadedSegments.map(seg => ({
+            metadata: {
+              userId: seg.userId,
+              username: seg.username,
+              startTime: seg.absoluteStartTime,
+              endTime: seg.absoluteEndTime,
+              duration: seg.duration,
+              sampleRate: 48000,
+              channels: 2,
+              segmentIndex: seg.segmentIndex
+            },
+            filePath: seg.blobUrl, // Use blob URL as filePath
+            fileSize: seg.fileSize,
+            format: 'wav' as const
+          })),
+          outputDirectory: session.outputDirectory,
+          totalSize: finalizeResponse.recording.totalSize,
+          participantCount: finalizeResponse.recording.participantCount
+        };
+
+        // Cleanup temporary directory
+        try {
+          await fs.rm(session.outputDirectory, { recursive: true, force: true });
+          logger.info(`Cleaned up temporary directory: ${session.outputDirectory}`);
+        } catch (cleanupError) {
+          logger.warn(`Failed to cleanup temporary directory`, cleanupError);
+        }
+
+      } catch (error) {
+        logger.error(`Failed to finalize recording via API, falling back to batch export`, error);
+        // Fall through to batch export logic below
+      }
+    }
+
+    // Batch export fallback (if streaming uploads failed or weren't used)
+    if (!exportedRecording!) {
+      logger.info(`Using batch export mode (no streaming uploads or finalize failed)`);
+
+      // Convert user recordings with segments to array format for export
+      const segments: Array<{
+        userId: string;
+        username: string;
+        segmentIndex: number;
+        startTime: number;
+        endTime: number;
+        bufferChunks: Buffer[];
+      }> = [];
+
+      for (const userRecording of session.userRecordings.values()) {
+        if (userRecording.endTime !== undefined) {
+          for (const segment of userRecording.completedSegments) {
+            if (segment.absoluteEndTime !== undefined) {
+              segments.push({
+                userId: segment.userId,
+                username: segment.username,
+                segmentIndex: segment.segmentIndex,
+                startTime: segment.absoluteStartTime,
+                endTime: segment.absoluteEndTime,
+                bufferChunks: segment.bufferChunks
+              });
+            }
           }
         }
       }
-    }
 
-    if (segments.length === 0) {
-      throw new Error('No segments to export');
-    }
-
-    // Export all segments to audio files
-    const exportedRecording = await multiTrackExporter.exportMultiTrack(
-      segments,
-      {
-        sessionId: session.sessionId,
-        sessionStartTime: session.startTime,
-        sessionEndTime: session.endTime,
-        guildName: session.guildName,
-        ...options
+      if (segments.length === 0) {
+        throw new Error('No segments to export');
       }
-    );
 
-    logger.info('Session exported successfully', {
-      sessionId,
-      segmentCount: exportedRecording.tracks.length,
-      totalSize: exportedRecording.totalSize,
-      outputDirectory: exportedRecording.outputDirectory
-    });
+      // Export all segments to audio files
+      exportedRecording = await multiTrackExporter.exportMultiTrack(
+        segments,
+        {
+          sessionId: session.sessionId,
+          sessionStartTime: session.startTime,
+          sessionEndTime: session.endTime,
+          guildName: session.guildName,
+          ...options
+        }
+      );
+
+      logger.info('Session exported successfully via batch mode', {
+        sessionId,
+        segmentCount: exportedRecording.tracks.length,
+        totalSize: exportedRecording.totalSize,
+        outputDirectory: exportedRecording.outputDirectory
+      });
+    }
 
     // Create sessionData object to return (keep original structure for compatibility)
     const sessionData: SessionMetadata = {
@@ -634,7 +905,10 @@ export class BasicRecordingService {
       startTime: session.startTime,
       endTime: session.endTime,
       userRecordings: session.userRecordings,
-      participantCount: session.participantCount
+      participantCount: session.participantCount,
+      outputDirectory: session.outputDirectory,
+      uploadedSegments: session.uploadedSegments,
+      ...(session.recordingId && { recordingId: session.recordingId })
     };
 
     // Clean up - remove from active sessions

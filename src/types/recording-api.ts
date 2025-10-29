@@ -114,6 +114,7 @@ export interface RecordingUploadErrorResponse {
 }
 
 export type RecordingStatus =
+  | 'live' // Recording in progress (streaming uploads)
   | 'uploading' // Initial state during upload
   | 'processing' // Transcription job queued/running
   | 'completed' // Everything done
@@ -220,4 +221,68 @@ export type RecordingWebhookPayload =
 export interface WebhookHeaders {
   'X-Webhook-Signature': string;
   'X-Webhook-Timestamp': string;
+}
+
+// Streaming upload types (for on-the-fly segment uploads)
+
+export interface RecordingInitLiveRequest {
+  sessionId: string;
+  guildId: string;
+  guildName: string;
+  channelId: string;
+  userId: string; // User who started recording
+  recordedAt: string; // ISO datetime string
+}
+
+export interface RecordingInitLiveResponse {
+  recordingId: string; // Database ID for tracking this recording
+  status: 'live';
+}
+
+export interface SegmentUploadUrlRequest {
+  userId: string;
+  username: string;
+  segmentIndex: number;
+  fileName: string;
+  fileSize: number;
+  absoluteStartTime: number; // Unix timestamp in ms
+  absoluteEndTime: number; // Unix timestamp in ms
+  duration: number; // Duration in ms
+  format: string; // 'wav', 'flac', 'mp3'
+}
+
+export interface SegmentUploadUrlResponse {
+  uploadUrl: string; // Pre-signed upload URL
+  blobPath: string; // Path in blob storage
+}
+
+export interface RecordingSegmentWithBlob extends RecordingSegment {
+  blobUrl: string; // Blob URL after upload
+  filePath: string; // Relative path (e.g., "Username/segment_000.wav")
+}
+
+export interface RecordingFinalizeRequest {
+  sessionEndTime: number; // Unix timestamp in ms
+  duration: number; // Total duration in ms
+  totalSize: number; // Total size in bytes
+  participantCount: number;
+  segments: RecordingSegmentWithBlob[];
+}
+
+export interface RecordingFinalizeResponse {
+  success: true;
+  recording: {
+    id: string;
+    sessionId: string;
+    status: RecordingStatus;
+    duration: number;
+    participantCount: number;
+    segmentCount: number;
+    totalSize: number;
+    downloadUrls: {
+      audio: string[];
+    };
+    viewUrl: string;
+    estimatedProcessingTime: string;
+  };
 }

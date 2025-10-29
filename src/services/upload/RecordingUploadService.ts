@@ -3,6 +3,7 @@ import * as path from 'path';
 import axios from 'axios';
 import { apiClient } from '../api/client';
 import { logger } from '../../utils/logger';
+import { config } from '../../utils/config';
 import { ExportedRecording } from '../processing/MultiTrackExporter';
 import {
   RecordingUploadMetadata,
@@ -14,6 +15,13 @@ import {
   RecordingUploadCompleteResponse,
   RecordingUploadedFile,
   RecordingSegment,
+  RecordingInitLiveRequest,
+  RecordingInitLiveResponse,
+  SegmentUploadUrlRequest,
+  SegmentUploadUrlResponse,
+  RecordingFinalizeRequest,
+  RecordingFinalizeResponse,
+  RecordingSegmentWithBlob,
 } from '../../types/recording-api';
 
 // Re-export for backward compatibility
@@ -357,7 +365,7 @@ export class RecordingUploadService {
         success: true,
         recordingId: completeResponse.recording.id,
         downloadUrls: completeResponse.recording.downloadUrls,
-        viewUrl: completeResponse.recording.viewUrl,
+        viewUrl: `${config.PLATFORM_WEB_URL}/dashboard/recordings/${completeResponse.recording.id}`,
         estimatedProcessingTime: completeResponse.recording.estimatedProcessingTime,
       };
     } catch (error: any) {
@@ -465,7 +473,7 @@ export class RecordingUploadService {
    * Check recording status on API
    */
   async checkStatus(recordingId: string): Promise<{
-    status: 'uploading' | 'processing' | 'completed' | 'failed';
+    status: RecordingStatus;
     transcript?: {
       wordCount: number;
       confidence: number;
@@ -530,6 +538,191 @@ export class RecordingUploadService {
    */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // ========================================================================
+  // STREAMING UPLOAD METHODS (for on-the-fly segment uploads)
+  // ========================================================================
+
+  /**
+   * Initialize a live recording session (called when recording starts)
+   */
+  async initLiveRecording(
+    sessionId: string,
+    guildId: string,
+    guildName: string,
+    channelId: string,
+    userId: string
+  ): Promise<RecordingInitLiveResponse> {
+    try {
+      logger.info(`Initializing live recording session ${sessionId}`);
+
+      const request: RecordingInitLiveRequest = {
+        sessionId,
+        guildId,
+        guildName,
+        channelId,
+        userId,
+        recordedAt: new Date().toISOString(),
+      };
+
+      const response = await apiClient.post<RecordingInitLiveResponse>(
+        '/recordings/init-live',
+        request
+      );
+
+      if (!response.data) {
+        throw new Error('No data in init-live response');
+      }
+
+      logger.info(`Live recording initialized with ID: ${response.data.recordingId}`);
+      return response.data;
+    } catch (error: any) {
+      logger.error(`Failed to init live recording for session ${sessionId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload a single segment immediately after it completes
+   *
+   * Flow:
+   * 1. Request upload URL from API
+   * 2. Upload file to blob storage via proxy
+   * 3. Return blob URL
+   */
+  async uploadSegmentImmediately(
+    recordingId: string,
+    segmentFilePath: string,
+    metadata: {
+      userId: string;
+      username: string;
+      segmentIndex: number;
+      absoluteStartTime: number;
+      absoluteEndTime: number;
+      duration: number;
+      format: string;
+    }
+  ): Promise<{ blobUrl: string; blobPath: string }> {
+    try {
+      const fileName = path.basename(segmentFilePath);
+      const stats = await fs.promises.stat(segmentFilePath);
+      const fileSize = stats.size;
+
+      logger.info(`Uploading segment ${metadata.segmentIndex} for user ${metadata.username}`, {
+        fileName,
+        fileSize,
+        recordingId,
+      });
+
+      // Step 1: Request upload URL
+      const urlRequest: SegmentUploadUrlRequest = {
+        userId: metadata.userId,
+        username: metadata.username,
+        segmentIndex: metadata.segmentIndex,
+        fileName,
+        fileSize,
+        absoluteStartTime: metadata.absoluteStartTime,
+        absoluteEndTime: metadata.absoluteEndTime,
+        duration: metadata.duration,
+        format: metadata.format,
+      };
+
+      const urlResponse = await apiClient.post<SegmentUploadUrlResponse>(
+        `/recordings/${recordingId}/segment-upload-url`,
+        urlRequest
+      );
+
+      if (!urlResponse.data) {
+        throw new Error('No upload URL in response');
+      }
+
+      const { uploadUrl, blobPath } = urlResponse.data;
+
+      logger.debug(`Got upload URL for segment ${metadata.segmentIndex}`, {
+        blobPath,
+        uploadUrl: uploadUrl.substring(0, 50) + '...',
+      });
+
+      // Step 2: Upload file to blob storage
+      const fileBuffer = await fs.promises.readFile(segmentFilePath);
+
+      const uploadResponse = await axios.put(uploadUrl, fileBuffer, {
+        headers: {
+          'Content-Type': 'audio/wav',
+          'x-ms-blob-type': 'BlockBlob',
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 300000, // 5 minutes
+      });
+
+      // Extract blob URL from response
+      let blobUrl: string;
+      if (uploadResponse.data && (uploadResponse.data.url || uploadResponse.data.blobUrl)) {
+        blobUrl = uploadResponse.data.url || uploadResponse.data.blobUrl;
+      } else {
+        // Fallback: use upload URL without query params
+        blobUrl = uploadUrl.split('?')[0] || uploadUrl;
+        logger.warn(`No blob URL in upload response, using fallback`, {
+          segmentIndex: metadata.segmentIndex,
+        });
+      }
+
+      logger.info(`Segment ${metadata.segmentIndex} uploaded successfully`, {
+        blobUrl: blobUrl.substring(0, 50) + '...',
+        fileSize,
+      });
+
+      return { blobUrl, blobPath };
+    } catch (error: any) {
+      logger.error(`Failed to upload segment ${metadata.segmentIndex}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Finalize recording with all uploaded segments
+   */
+  async finalizeRecording(
+    recordingId: string,
+    sessionEndTime: number,
+    segments: RecordingSegmentWithBlob[]
+  ): Promise<RecordingFinalizeResponse> {
+    try {
+      logger.info(`Finalizing recording ${recordingId}`, {
+        segmentCount: segments.length,
+      });
+
+      // Calculate totals
+      const totalSize = segments.reduce((sum, seg) => sum + seg.fileSize, 0);
+      const participantCount = new Set(segments.map((seg) => seg.userId)).size;
+      const sessionStartTime = Math.min(...segments.map((seg) => seg.absoluteStartTime));
+      const duration = sessionEndTime - sessionStartTime;
+
+      const request: RecordingFinalizeRequest = {
+        sessionEndTime,
+        duration,
+        totalSize,
+        participantCount,
+        segments,
+      };
+
+      const response = await apiClient.post<RecordingFinalizeResponse>(
+        `/recordings/${recordingId}/finalize`,
+        request
+      );
+
+      if (!response.data) {
+        throw new Error('No data in finalize response');
+      }
+
+      logger.info(`Recording ${recordingId} finalized successfully`);
+      return response.data;
+    } catch (error: any) {
+      logger.error(`Failed to finalize recording ${recordingId}`, error);
+      throw error;
+    }
   }
 }
 

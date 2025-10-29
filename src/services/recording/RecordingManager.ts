@@ -50,10 +50,19 @@ export class RecordingManager {
 
       // Get guild name and guild object
       const guildName = voiceChannel.guild.name;
+      const guildId = voiceChannel.guild.id;
       const guild = voiceChannel.guild;
 
-      // Start recording
-      await this.recordingService.startRecording(sessionId, connection.receiver, channelId, guildName, guild);
+      // Start recording with streaming upload support
+      await this.recordingService.startRecording(
+        sessionId,
+        connection.receiver,
+        channelId,
+        guildName,
+        guild,
+        guildId,
+        requestedBy.id
+      );
 
       // Track the session
       this.activeSessions.set(channelId, {
@@ -95,6 +104,8 @@ export class RecordingManager {
     message: string;
     exportedRecording?: ExportedRecording;
     transcript?: SessionTranscript;
+    recordingId?: string;
+    viewUrl?: string;
   }> {
     const activeSession = this.activeSessions.get(channelId);
     if (!activeSession) {
@@ -151,6 +162,8 @@ export class RecordingManager {
         message: string;
         exportedRecording?: ExportedRecording;
         transcript?: SessionTranscript;
+        recordingId?: string;
+        viewUrl?: string;
       } = {
         sessionId,
         duration: Math.round(duration / 1000), // Convert to seconds
@@ -160,6 +173,12 @@ export class RecordingManager {
 
       if (exportedRecording) {
         result.exportedRecording = exportedRecording;
+      }
+
+      // If streaming uploads were used, include recordingId and viewUrl
+      if (sessionData.recordingId) {
+        result.recordingId = sessionData.recordingId;
+        result.viewUrl = `${config.PLATFORM_WEB_URL}/dashboard/recordings/${sessionData.recordingId}`;
       }
 
       // Auto-transcribe if requested and files were exported
