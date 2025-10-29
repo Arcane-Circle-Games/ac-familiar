@@ -566,17 +566,18 @@ export class RecordingUploadService {
         recordedAt: new Date().toISOString(),
       };
 
-      const response = await apiClient.post<RecordingInitLiveResponse>(
+      const response = await apiClient.post<{ success: boolean; data: RecordingInitLiveResponse }>(
         '/recordings/init-live',
         request
       );
 
-      if (!response.data) {
+      if (!response.data || !response.data.data) {
         throw new Error('No data in init-live response');
       }
 
-      logger.info(`Live recording initialized with ID: ${response.data.recordingId}`);
-      return response.data;
+      const result = response.data.data;
+      logger.info(`Live recording initialized with ID: ${result.recordingId}`);
+      return result;
     } catch (error: any) {
       logger.error(`Failed to init live recording for session ${sessionId}`, error);
       throw error;
@@ -628,16 +629,16 @@ export class RecordingUploadService {
         format: metadata.format,
       };
 
-      const urlResponse = await apiClient.post<SegmentUploadUrlResponse>(
+      const urlResponse = await apiClient.post<{ success: boolean; data: SegmentUploadUrlResponse }>(
         `/recordings/${recordingId}/segment-upload-url`,
         urlRequest
       );
 
-      if (!urlResponse.data) {
+      if (!urlResponse.data || !urlResponse.data.data) {
         throw new Error('No upload URL in response');
       }
 
-      const { uploadUrl, blobPath } = urlResponse.data;
+      const { uploadUrl, blobPath } = urlResponse.data.data;
 
       logger.debug(`Got upload URL for segment ${metadata.segmentIndex}`, {
         blobPath,
@@ -708,17 +709,18 @@ export class RecordingUploadService {
         segments,
       };
 
-      const response = await apiClient.post<RecordingFinalizeResponse>(
+      const response = await apiClient.post<{ success: boolean; data: RecordingFinalizeResponse }>(
         `/recordings/${recordingId}/finalize`,
         request
       );
 
-      if (!response.data) {
+      if (!response.data || !response.data.data) {
         throw new Error('No data in finalize response');
       }
 
+      const result = response.data.data;
       logger.info(`Recording ${recordingId} finalized successfully`);
-      return response.data;
+      return result;
     } catch (error: any) {
       logger.error(`Failed to finalize recording ${recordingId}`, error);
       throw error;
