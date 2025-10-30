@@ -12,12 +12,27 @@ import {
   RecordingTranscriptionCompletedWebhook,
   RecordingTranscriptionFailedWebhook,
 } from '../../types/recording-api';
+import {
+  NotificationWebhook,
+  SessionReminderWebhook,
+  BookingConfirmedWebhook,
+  ApplicationStatusWebhook,
+  SessionCancelledWebhook,
+} from '../../types/webhooks';
+import {
+  buildSessionReminderEmbed,
+  buildBookingConfirmedEmbed,
+  buildApplicationStatusEmbed,
+  buildSessionCancelledEmbed,
+} from '../../utils/embeds/notifications';
 import { ArcaneBot } from '../../bot';
+import DMService from '../discord/DMService';
 
 export class WebhookListener {
   private app: express.Express;
   private server: any;
   private bot: ArcaneBot | null = null;
+  private dmService: DMService | null = null;
 
   constructor() {
     this.app = express();
@@ -30,6 +45,7 @@ export class WebhookListener {
    */
   setBot(bot: ArcaneBot): void {
     this.bot = bot;
+    this.dmService = new DMService(bot.client);
     logger.info('Bot instance set for WebhookListener');
   }
 
@@ -40,6 +56,56 @@ export class WebhookListener {
     // Health check
     this.app.get('/health', (_req: Request, res: Response) => {
       res.json({ status: 'ok', service: 'webhook-listener' });
+    });
+
+    // Notification webhook handler
+    this.app.post('/webhooks/notification', async (req: Request, res: Response): Promise<any> => {
+      try {
+        // Verify signature
+        const signature = req.headers['x-webhook-signature'] as string;
+        const timestamp = req.headers['x-webhook-timestamp'] as string;
+
+        if (!signature || !timestamp) {
+          logger.warn('Notification webhook received without signature/timestamp');
+          return res.status(401).json({ error: 'Missing signature or timestamp' });
+        }
+
+        // Verify signature
+        const isValid = this.verifySignature(JSON.stringify(req.body), signature);
+
+        if (!isValid) {
+          logger.error('Notification webhook signature verification failed');
+          return res.status(401).json({ error: 'Invalid signature' });
+        }
+
+        // Check timestamp to prevent replay attacks (within 5 minutes)
+        const now = Date.now();
+        const webhookTime = parseInt(timestamp, 10);
+        if (Math.abs(now - webhookTime) > 5 * 60 * 1000) {
+          logger.warn('Notification webhook timestamp too old or in the future', {
+            now,
+            webhookTime,
+            diff: now - webhookTime,
+          });
+          return res.status(401).json({ error: 'Timestamp too old or in the future' });
+        }
+
+        // Process notification webhook
+        const payload = req.body as NotificationWebhook;
+
+        logger.info(`Received notification webhook: ${payload.event}`, {
+          userId: payload.userId,
+          discordId: payload.discordId,
+          notificationType: payload.notification.type,
+        });
+
+        await this.handleNotificationWebhook(payload);
+
+        res.status(200).json({ received: true });
+      } catch (error) {
+        logger.error('Error processing notification webhook', error as Error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
     });
 
     // Recording webhook handler
@@ -214,6 +280,171 @@ export class WebhookListener {
       logger.error('Failed to send Discord notification', error as Error, {
         channelId: payload.channelId,
         recordingId: payload.recordingId,
+      });
+    }
+  }
+
+  /**
+   * Handle notification webhook
+   */
+  private async handleNotificationWebhook(payload: NotificationWebhook): Promise<void> {
+    switch (payload.event) {
+      case 'notification.session.reminder':
+        await this.handleSessionReminder(payload);
+        break;
+
+      case 'notification.booking.confirmed':
+        await this.handleBookingConfirmed(payload);
+        break;
+
+      case 'notification.application.status':
+        await this.handleApplicationStatus(payload);
+        break;
+
+      case 'notification.session.cancelled':
+        await this.handleSessionCancelled(payload);
+        break;
+
+      default:
+        logger.warn(`Unknown notification event: ${(payload as any).event}`);
+    }
+  }
+
+  /**
+   * Handle session reminder notification
+   */
+  private async handleSessionReminder(payload: SessionReminderWebhook): Promise<void> {
+    logger.info('Processing session reminder', {
+      sessionId: payload.notification.metadata.sessionId,
+      gameTitle: payload.notification.metadata.gameTitle,
+      discordId: payload.discordId,
+    });
+
+    if (!this.dmService) {
+      logger.warn('DM service not initialized, cannot send notification');
+      return;
+    }
+
+    try {
+      const embed = buildSessionReminderEmbed(payload);
+      const success = await this.dmService.sendDM(payload.discordId, embed);
+
+      if (success) {
+        logger.info('Session reminder DM sent successfully', {
+          discordId: payload.discordId,
+          sessionId: payload.notification.metadata.sessionId,
+        });
+      } else {
+        logger.warn('Failed to send session reminder DM', {
+          discordId: payload.discordId,
+          sessionId: payload.notification.metadata.sessionId,
+        });
+      }
+    } catch (error) {
+      logger.error('Error sending session reminder DM', error as Error, {
+        discordId: payload.discordId,
+        sessionId: payload.notification.metadata.sessionId,
+      });
+    }
+  }
+
+  /**
+   * Handle booking confirmed notification
+   */
+  private async handleBookingConfirmed(payload: BookingConfirmedWebhook): Promise<void> {
+    logger.info('Processing booking confirmation', {
+      bookingId: payload.notification.metadata.bookingId,
+      gameTitle: payload.notification.metadata.gameTitle,
+      discordId: payload.discordId,
+    });
+
+    if (!this.dmService) {
+      logger.warn('DM service not initialized, cannot send notification');
+      return;
+    }
+
+    try {
+      const embed = buildBookingConfirmedEmbed(payload);
+      const success = await this.dmService.sendDM(payload.discordId, embed);
+
+      if (success) {
+        logger.info('Booking confirmation DM sent successfully', {
+          discordId: payload.discordId,
+          bookingId: payload.notification.metadata.bookingId,
+        });
+      }
+    } catch (error) {
+      logger.error('Error sending booking confirmation DM', error as Error, {
+        discordId: payload.discordId,
+        bookingId: payload.notification.metadata.bookingId,
+      });
+    }
+  }
+
+  /**
+   * Handle application status notification
+   */
+  private async handleApplicationStatus(payload: ApplicationStatusWebhook): Promise<void> {
+    logger.info('Processing application status update', {
+      bookingId: payload.notification.metadata.bookingId,
+      status: payload.notification.metadata.status,
+      gameTitle: payload.notification.metadata.gameTitle,
+      discordId: payload.discordId,
+    });
+
+    if (!this.dmService) {
+      logger.warn('DM service not initialized, cannot send notification');
+      return;
+    }
+
+    try {
+      const embed = buildApplicationStatusEmbed(payload);
+      const success = await this.dmService.sendDM(payload.discordId, embed);
+
+      if (success) {
+        logger.info('Application status DM sent successfully', {
+          discordId: payload.discordId,
+          bookingId: payload.notification.metadata.bookingId,
+          status: payload.notification.metadata.status,
+        });
+      }
+    } catch (error) {
+      logger.error('Error sending application status DM', error as Error, {
+        discordId: payload.discordId,
+        bookingId: payload.notification.metadata.bookingId,
+      });
+    }
+  }
+
+  /**
+   * Handle session cancelled notification
+   */
+  private async handleSessionCancelled(payload: SessionCancelledWebhook): Promise<void> {
+    logger.info('Processing session cancellation', {
+      sessionId: payload.notification.metadata.sessionId,
+      gameTitle: payload.notification.metadata.gameTitle,
+      discordId: payload.discordId,
+    });
+
+    if (!this.dmService) {
+      logger.warn('DM service not initialized, cannot send notification');
+      return;
+    }
+
+    try {
+      const embed = buildSessionCancelledEmbed(payload);
+      const success = await this.dmService.sendDM(payload.discordId, embed);
+
+      if (success) {
+        logger.info('Session cancellation DM sent successfully', {
+          discordId: payload.discordId,
+          sessionId: payload.notification.metadata.sessionId,
+        });
+      }
+    } catch (error) {
+      logger.error('Error sending session cancellation DM', error as Error, {
+        discordId: payload.discordId,
+        sessionId: payload.notification.metadata.sessionId,
       });
     }
   }
