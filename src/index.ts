@@ -1,7 +1,8 @@
-import { validateConfig } from './utils/config';
+import { validateConfig, config } from './utils/config';
 import { logError, logInfo } from './utils/logger';
 import { ArcaneBot } from './bot';
 import { GameAnnouncementScheduler } from './services/scheduled';
+import { webhookListener } from './services/webhooks/WebhookListener';
 
 // Global scheduler reference for cleanup
 let gameScheduler: GameAnnouncementScheduler | null = null;
@@ -21,6 +22,11 @@ async function main() {
 
     logInfo('✅ Bot started successfully');
 
+    // Start webhook listener
+    webhookListener.setBot(bot);
+    await webhookListener.start(config.WEBHOOK_LISTENER_PORT);
+    logInfo(`✅ Webhook listener started on port ${config.WEBHOOK_LISTENER_PORT}`);
+
     // Start game announcement scheduler
     gameScheduler = new GameAnnouncementScheduler(bot);
     gameScheduler.start();
@@ -37,6 +43,7 @@ process.on('SIGINT', async () => {
   if (gameScheduler) {
     await gameScheduler.cleanup();
   }
+  await webhookListener.stop();
   process.exit(0);
 });
 
@@ -45,6 +52,7 @@ process.on('SIGTERM', async () => {
   if (gameScheduler) {
     await gameScheduler.cleanup();
   }
+  await webhookListener.stop();
   process.exit(0);
 });
 
