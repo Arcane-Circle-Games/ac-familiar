@@ -83,7 +83,7 @@ export class SessionService {
   public async getSessionAttendees(sessionId: string): Promise<ApiResponse<SessionAttendee[]>> {
     try {
       logInfo('Fetching session attendees', { sessionId });
-      return await apiClient.get<SessionAttendee[]>(`/sessions/${sessionId}/attendees`);
+      return await apiClient.get<SessionAttendee[]>(`/sessions/${sessionId}/attendance`);
     } catch (error) {
       logError('Failed to fetch session attendees', error as Error, { sessionId });
       throw error;
@@ -158,14 +158,17 @@ export class SessionService {
   }
 
   // Get sessions for a specific game (alias for gameId)
-  public async getGameSessions(gameId: string, discordUserId?: string): Promise<Session[]> {
+  public async getGameSessions(gameId: string, discordUserId?: string, includeAttendances?: boolean): Promise<Session[]> {
     try {
-      logInfo('Fetching game sessions', { gameId, discordUserId });
+      logInfo('Fetching game sessions', { gameId, discordUserId, includeAttendances });
 
       // Include discordUserId in query params for bot authentication
       const params: Record<string, string> = { gameId };
       if (discordUserId) {
         params['discordUserId'] = discordUserId;
+      }
+      if (includeAttendances) {
+        params['include'] = 'attendances';
       }
 
       const response = await apiClient.get<any>('/sessions', params);

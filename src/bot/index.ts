@@ -25,6 +25,7 @@ import { leaveGameCommand } from '../commands/leave-game';
 import { myGamesCommand } from '../commands/my-games';
 import { nextSessionCommand } from '../commands/next-session';
 import { profileCommand } from '../commands/profile';
+import { attendanceCommand } from '../commands/attendance';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -150,7 +151,8 @@ export class ArcaneBot {
       leaveGameCommand,
       myGamesCommand,
       nextSessionCommand,
-      profileCommand
+      profileCommand,
+      attendanceCommand
     ];
     
     commands.forEach(command => {
