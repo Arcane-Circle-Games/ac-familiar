@@ -373,9 +373,9 @@ export class WebhookListener {
     try {
       const embed = buildSessionReminderEmbed(payload);
 
-      // Check if should post to channel
+      // Check if should post to channel (no user mention)
       if (payload.channelId && payload.notificationMode !== 'DM_ONLY') {
-        await this.sendToChannel(payload.channelId, embed, payload.discordId);
+        await this.sendToChannel(payload.channelId, embed);
       }
 
       // Send DM if mode is DM_ONLY, BOTH, or no channel configured
@@ -496,9 +496,9 @@ export class WebhookListener {
     try {
       const embed = buildSessionCancelledEmbed(payload);
 
-      // Check if should post to channel
+      // Check if should post to channel (no user mention)
       if (payload.channelId && payload.notificationMode !== 'DM_ONLY') {
-        await this.sendToChannel(payload.channelId, embed, payload.discordId);
+        await this.sendToChannel(payload.channelId, embed);
       }
 
       // Send DM if mode is DM_ONLY, BOTH, or no channel configured

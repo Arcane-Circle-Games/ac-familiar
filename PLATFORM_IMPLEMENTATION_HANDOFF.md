@@ -316,11 +316,11 @@ The bot routes notifications based on `notificationMode`:
 
 ### CHANNEL_ONLY
 - ❌ Do NOT send DM
-- ✅ Post to configured channel (with user mention)
+- ✅ Post to configured channel (no user mention)
 
 ### BOTH
 - ✅ Send DM to user
-- ✅ Post to configured channel (with user mention)
+- ✅ Post to configured channel (no user mention)
 
 ### No channel configured (`channelId` is null/undefined)
 - ✅ Send DM to user
