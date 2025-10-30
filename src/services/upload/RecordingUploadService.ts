@@ -321,6 +321,28 @@ export class RecordingUploadService {
       logger.info(`Upload completed successfully for recording ${recordingId}`);
       return response.data;
     } catch (error: any) {
+      // Check if this is the "Recording not in uploading state" error
+      if (error.response?.data?.error?.includes('not in uploading state') ||
+          error.response?.data?.error?.includes('Recording not in uploading state')) {
+        const currentStatus = error.response?.data?.currentStatus || 'unknown';
+        logger.error(
+          `❌ Cannot complete upload - recording ${recordingId} is in '${currentStatus}' state, not 'uploading'.\n` +
+          `This usually means the recording was initialized as a live recording but the upload flow is trying to use batch upload.\n` +
+          `The recording should have been finalized using the finalize endpoint, not the complete endpoint.`
+        );
+
+        // Create a more helpful error message
+        const helpfulError = new Error(
+          `Recording ${recordingId} is in '${currentStatus}' state. ` +
+          `This recording should use the finalize flow, not the batch upload flow. ` +
+          `This is likely because the recording was started as a live recording but the recordingId wasn't properly tracked.`
+        );
+        (helpfulError as any).originalError = error;
+        (helpfulError as any).recordingId = recordingId;
+        (helpfulError as any).currentStatus = currentStatus;
+        throw helpfulError;
+      }
+
       logger.error(`Failed to complete upload for recording ${recordingId}`, error);
       throw error;
     }
@@ -337,9 +359,87 @@ export class RecordingUploadService {
     try {
       logger.info(`Starting two-step upload for session ${metadata.sessionId}`, {
         trackCount: exportedRecording.tracks.length,
+        hasRecordingId: !!exportedRecording.recordingId
       });
 
       const startTime = Date.now();
+
+      // Check if this is a live recording (has recordingId from init-live)
+      if (exportedRecording.recordingId) {
+        logger.info(`Using finalize flow for live recording ${exportedRecording.recordingId}`);
+
+        // Build segments array for finalize request
+        const segments: RecordingSegmentWithBlob[] = [];
+
+        // Upload each track/segment individually using segment-upload-url endpoint
+        for (let i = 0; i < exportedRecording.tracks.length; i++) {
+          const track = exportedRecording.tracks[i];
+          if (!track) continue;
+
+          onProgress?.({
+            uploadedBytes: i * (track.fileSize || 0),
+            totalBytes: exportedRecording.totalSize,
+            percentage: Math.round((i / exportedRecording.tracks.length) * 100),
+            currentFile: track.filePath,
+            currentFileIndex: i,
+            totalFiles: exportedRecording.tracks.length
+          });
+
+          // Upload this segment
+          const { blobUrl, blobPath } = await this.uploadSegmentImmediately(
+            exportedRecording.recordingId,
+            track.filePath,
+            {
+              userId: track.metadata.userId,
+              username: track.metadata.username,
+              segmentIndex: track.metadata.segmentIndex ?? i,
+              absoluteStartTime: track.metadata.startTime,
+              absoluteEndTime: track.metadata.endTime,
+              duration: track.metadata.duration,
+              format: track.format
+            }
+          );
+
+          // Add to segments array
+          segments.push({
+            userId: track.metadata.userId,
+            username: track.metadata.username,
+            segmentIndex: track.metadata.segmentIndex ?? i,
+            fileName: track.filePath.split('/').pop() || `segment_${i}.wav`,
+            absoluteStartTime: track.metadata.startTime,
+            absoluteEndTime: track.metadata.endTime,
+            duration: track.metadata.duration ?? 0,
+            fileSize: track.fileSize,
+            format: track.format,
+            blobUrl,
+            filePath: blobPath
+          });
+        }
+
+        // Finalize the live recording
+        const finalizeResponse = await this.finalizeRecording(
+          exportedRecording.recordingId,
+          exportedRecording.sessionEndTime,
+          segments
+        );
+
+        const uploadDuration = Date.now() - startTime;
+        logger.info(`Live recording finalized in ${uploadDuration}ms`, {
+          sessionId: metadata.sessionId,
+          recordingId: finalizeResponse.recording.id
+        });
+
+        return {
+          success: true,
+          recordingId: finalizeResponse.recording.id,
+          downloadUrls: finalizeResponse.recording.downloadUrls,
+          viewUrl: `${config.PLATFORM_WEB_URL}/dashboard/recordings/${finalizeResponse.recording.id}`,
+          estimatedProcessingTime: finalizeResponse.recording.estimatedProcessingTime,
+        };
+      }
+
+      // Batch upload flow (no recordingId - not a live recording)
+      logger.info(`Using batch upload flow (no live recording ID)`);
 
       // Step 1: Initialize upload and get pre-signed URLs
       const initResponse = await this.initializeUpload(exportedRecording, metadata);
@@ -609,13 +709,17 @@ export class RecordingUploadService {
     guildId: string,
     guildName: string,
     channelId: string,
-    userId: string
+    userId: string,
+    platformSessionId?: string
   ): Promise<RecordingInitLiveResponse> {
     try {
-      logger.info(`Initializing live recording session ${sessionId}`);
+      logger.info(`Initializing live recording session ${sessionId}`, {
+        platformSessionId
+      });
 
       const request: RecordingInitLiveRequest = {
         sessionId,
+        ...(platformSessionId !== undefined && { platformSessionId }),
         guildId,
         guildName,
         channelId,
@@ -623,16 +727,36 @@ export class RecordingUploadService {
         recordedAt: new Date().toISOString(),
       };
 
-      const response = await apiClient.post<{ success: boolean; data: RecordingInitLiveResponse }>(
+      const response = await apiClient.post<{ success: boolean; data: RecordingInitLiveResponse } | RecordingInitLiveResponse>(
         '/recordings/init-live',
         request
       );
 
-      if (!response.data || !response.data.data) {
+      if (!response.data) {
         throw new Error('No data in init-live response');
       }
 
-      const result = response.data.data;
+      // Handle both wrapped and unwrapped response formats
+      // Wrapped format: { success: boolean, data: { recordingId, ... } }
+      // Unwrapped format: { recordingId, ... }
+      let result: RecordingInitLiveResponse;
+      if ('data' in response.data && response.data.data) {
+        // Wrapped format
+        result = response.data.data;
+        logger.debug('Parsed wrapped init-live response format');
+      } else if ('recordingId' in response.data) {
+        // Unwrapped format (API returns data directly)
+        result = response.data as RecordingInitLiveResponse;
+        logger.debug('Parsed unwrapped init-live response format');
+      } else {
+        // Log the actual response structure to help debug
+        logger.error('Unexpected init-live response structure', {
+          responseKeys: Object.keys(response.data),
+          responseSample: JSON.stringify(response.data).substring(0, 200)
+        });
+        throw new Error('Unexpected init-live response structure');
+      }
+
       logger.info(`Live recording initialized with ID: ${result.recordingId}`);
       return result;
     } catch (error: any) {
@@ -686,16 +810,29 @@ export class RecordingUploadService {
         format: metadata.format,
       };
 
-      const urlResponse = await apiClient.post<{ success: boolean; data: SegmentUploadUrlResponse }>(
+      const urlResponse = await apiClient.post<{ success: boolean; data: SegmentUploadUrlResponse } | SegmentUploadUrlResponse>(
         `/recordings/${recordingId}/segment-upload-url`,
         urlRequest
       );
 
-      if (!urlResponse.data || !urlResponse.data.data) {
+      if (!urlResponse.data) {
         throw new Error('No upload URL in response');
       }
 
-      const { uploadUrl, blobPath } = urlResponse.data.data;
+      // Handle both wrapped and unwrapped response formats
+      let urlData: SegmentUploadUrlResponse;
+      if ('data' in urlResponse.data && urlResponse.data.data) {
+        urlData = urlResponse.data.data;
+      } else if ('uploadUrl' in urlResponse.data) {
+        urlData = urlResponse.data as SegmentUploadUrlResponse;
+      } else {
+        logger.error('Unexpected segment-upload-url response structure', {
+          responseKeys: Object.keys(urlResponse.data)
+        });
+        throw new Error('Unexpected segment-upload-url response structure');
+      }
+
+      const { uploadUrl, blobPath } = urlData;
 
       logger.debug(`Got upload URL for segment ${metadata.segmentIndex}`, {
         blobPath,
@@ -766,16 +903,28 @@ export class RecordingUploadService {
         segments,
       };
 
-      const response = await apiClient.post<{ success: boolean; data: RecordingFinalizeResponse }>(
+      const response = await apiClient.post<{ success: boolean; data: RecordingFinalizeResponse } | RecordingFinalizeResponse>(
         `/recordings/${recordingId}/finalize`,
         request
       );
 
-      if (!response.data || !response.data.data) {
+      if (!response.data) {
         throw new Error('No data in finalize response');
       }
 
-      const result = response.data.data;
+      // Handle both wrapped and unwrapped response formats
+      let result: RecordingFinalizeResponse;
+      if ('data' in response.data && response.data.data) {
+        result = response.data.data;
+      } else if ('recording' in response.data) {
+        result = response.data as RecordingFinalizeResponse;
+      } else {
+        logger.error('Unexpected finalize response structure', {
+          responseKeys: Object.keys(response.data)
+        });
+        throw new Error('Unexpected finalize response structure');
+      }
+
       logger.info(`Recording ${recordingId} finalized successfully`);
       return result;
     } catch (error: any) {

@@ -231,7 +231,8 @@ export class BasicRecordingService {
     guildName: string,
     guild: Guild,
     guildId: string,
-    userId: string
+    userId: string,
+    platformSessionId?: string
   ): Promise<void> {
     logger.info(`Starting recording session: ${sessionId}`);
 
@@ -279,18 +280,32 @@ export class BasicRecordingService {
         logger.info(`Resuming recording with ID: ${activeRecording.recordingId}`);
       } else {
         // No active recording - initialize new live recording via API (streaming upload flow)
+        logger.info(`Initializing new live recording via API`, {
+          sessionId,
+          platformSessionId,
+          guildId,
+          channelId
+        });
+
         const initResponse = await recordingUploadService.initLiveRecording(
           sessionId,
           guildId,
           guildName,
           channelId,
-          userId
+          userId,
+          platformSessionId
         );
+
+        if (!initResponse || !initResponse.recordingId) {
+          throw new Error('Init-live response missing recordingId');
+        }
+
         metadata.recordingId = initResponse.recordingId;
-        logger.info(`Live recording initialized with ID: ${initResponse.recordingId}`);
+        logger.info(`✅ Live recording initialized successfully with ID: ${initResponse.recordingId}`);
       }
     } catch (error) {
-      logger.error(`Failed to init live recording via API, continuing without streaming uploads`, error);
+      logger.error(`❌ Failed to init live recording via API, continuing without streaming uploads`, error);
+      logger.warn(`⚠️ Recording will use batch upload flow at the end (no live recording ID available)`);
       // Continue without streaming uploads - will fall back to batch upload at end
     }
 
@@ -917,6 +932,19 @@ export class BasicRecordingService {
         totalSize: exportedRecording.totalSize,
         outputDirectory: exportedRecording.outputDirectory
       });
+
+      // Include recordingId if available (from init-live)
+      if (session.recordingId) {
+        exportedRecording.recordingId = session.recordingId;
+        logger.info(`Recording ID from init-live: ${session.recordingId}`);
+      }
+    }
+
+    // IMPORTANT: Ensure recordingId is always set on exportedRecording if available
+    // This is critical for proper upload flow selection (finalize vs batch upload)
+    if (session.recordingId && exportedRecording && !exportedRecording.recordingId) {
+      exportedRecording.recordingId = session.recordingId;
+      logger.info(`Ensured recordingId is set on exportedRecording: ${session.recordingId}`);
     }
 
     // Create sessionData object to return (keep original structure for compatibility)
