@@ -5,9 +5,9 @@ import {
   ChannelType,
   EmbedBuilder,
 } from 'discord.js';
-import { Command } from '@/bot/client';
-import { arcaneAPI } from '@/services/api';
-import { logError, logInfo } from '@/utils/logger';
+import { Command } from '../bot/client';
+import { arcaneAPI } from '../services/api';
+import { logError, logInfo } from '../utils/logger';
 
 /**
  * /set-game-channel command
