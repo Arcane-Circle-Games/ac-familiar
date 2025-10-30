@@ -74,7 +74,7 @@ export const gamesCommand: Command = {
         pageGames.forEach((game: any) => {
           const systemName = typeof game.system === 'object' ? game.system.shortName || game.system.name : game.system;
           const gmName = typeof game.gm === 'object' ? game.gm.displayName : 'Unknown GM';
-          const price = game.pricePerSession ? `$${game.pricePerSession}/${game.currency}` : 'Free';
+          const price = game.pricePerSession ? `$${game.pricePerSession}` : 'Free';
 
           let gameValue = '';
           gameValue += `**System:** ${systemName}\n`;
