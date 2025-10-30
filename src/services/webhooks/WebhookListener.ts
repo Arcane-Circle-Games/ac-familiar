@@ -311,13 +311,58 @@ export class WebhookListener {
   }
 
   /**
+   * Send notification to Discord channel
+   */
+  private async sendToChannel(
+    channelId: string,
+    embed: any,
+    mentionUserId?: string
+  ): Promise<boolean> {
+    if (!this.bot) {
+      logger.warn('Bot not initialized, cannot send to channel');
+      return false;
+    }
+
+    try {
+      const channel = await this.bot.client.channels.fetch(channelId);
+
+      if (!channel || !channel.isTextBased()) {
+        logger.warn('Channel not found or not text-based', { channelId });
+        return false;
+      }
+
+      if ('send' in channel) {
+        // Build message payload conditionally
+        const messagePayload: { embeds: any[]; content?: string } = {
+          embeds: [embed],
+        };
+
+        // Only add content if we have a user to mention
+        if (mentionUserId) {
+          messagePayload.content = `<@${mentionUserId}>`;
+        }
+
+        await channel.send(messagePayload);
+      }
+
+      logger.info('Notification posted to channel', { channelId });
+      return true;
+    } catch (error) {
+      logger.error('Failed to post to channel', error as Error, { channelId });
+      return false;
+    }
+  }
+
+  /**
    * Handle session reminder notification
    */
   private async handleSessionReminder(payload: SessionReminderWebhook): Promise<void> {
     logger.info('Processing session reminder', {
-      sessionId: payload.notification.metadata.sessionId,
-      gameTitle: payload.notification.metadata.gameTitle,
+      sessionId: payload.notification?.metadata?.sessionId,
+      gameTitle: payload.notification?.metadata?.gameTitle,
       discordId: payload.discordId,
+      channelId: payload.channelId,
+      notificationMode: payload.notificationMode,
     });
 
     if (!this.dmService) {
@@ -327,23 +372,38 @@ export class WebhookListener {
 
     try {
       const embed = buildSessionReminderEmbed(payload);
-      const success = await this.dmService.sendDM(payload.discordId, embed);
 
-      if (success) {
-        logger.info('Session reminder DM sent successfully', {
-          discordId: payload.discordId,
-          sessionId: payload.notification.metadata.sessionId,
-        });
-      } else {
-        logger.warn('Failed to send session reminder DM', {
-          discordId: payload.discordId,
-          sessionId: payload.notification.metadata.sessionId,
-        });
+      // Check if should post to channel
+      if (payload.channelId && payload.notificationMode !== 'DM_ONLY') {
+        await this.sendToChannel(payload.channelId, embed, payload.discordId);
       }
-    } catch (error) {
-      logger.error('Error sending session reminder DM', error as Error, {
+
+      // Send DM if mode is DM_ONLY, BOTH, or no channel configured
+      if (!payload.channelId || payload.notificationMode === 'DM_ONLY' || payload.notificationMode === 'BOTH') {
+        const success = await this.dmService.sendDM(payload.discordId, embed);
+
+        if (success) {
+          logger.info('Session reminder DM sent successfully', {
+            discordId: payload.discordId,
+            sessionId: payload.notification?.metadata?.sessionId,
+          });
+        } else {
+          logger.warn('Failed to send session reminder DM', {
+            discordId: payload.discordId,
+            sessionId: payload.notification?.metadata?.sessionId,
+          });
+        }
+      }
+
+      logger.info('Session reminder notification sent', {
         discordId: payload.discordId,
-        sessionId: payload.notification.metadata.sessionId,
+        sentToChannel: !!payload.channelId && payload.notificationMode !== 'DM_ONLY',
+        sentToDM: !payload.channelId || payload.notificationMode !== 'CHANNEL_ONLY',
+      });
+    } catch (error) {
+      logger.error('Error sending session reminder', error as Error, {
+        discordId: payload.discordId,
+        sessionId: payload.notification?.metadata?.sessionId,
       });
     }
   }
@@ -353,8 +413,8 @@ export class WebhookListener {
    */
   private async handleBookingConfirmed(payload: BookingConfirmedWebhook): Promise<void> {
     logger.info('Processing booking confirmation', {
-      bookingId: payload.notification.metadata.bookingId,
-      gameTitle: payload.notification.metadata.gameTitle,
+      bookingId: payload.notification?.metadata?.bookingId,
+      gameTitle: payload.notification?.metadata?.gameTitle,
       discordId: payload.discordId,
     });
 
@@ -370,13 +430,13 @@ export class WebhookListener {
       if (success) {
         logger.info('Booking confirmation DM sent successfully', {
           discordId: payload.discordId,
-          bookingId: payload.notification.metadata.bookingId,
+          bookingId: payload.notification?.metadata?.bookingId,
         });
       }
     } catch (error) {
       logger.error('Error sending booking confirmation DM', error as Error, {
         discordId: payload.discordId,
-        bookingId: payload.notification.metadata.bookingId,
+        bookingId: payload.notification?.metadata?.bookingId,
       });
     }
   }
@@ -386,9 +446,9 @@ export class WebhookListener {
    */
   private async handleApplicationStatus(payload: ApplicationStatusWebhook): Promise<void> {
     logger.info('Processing application status update', {
-      bookingId: payload.notification.metadata.bookingId,
-      status: payload.notification.metadata.status,
-      gameTitle: payload.notification.metadata.gameTitle,
+      bookingId: payload.notification?.metadata?.bookingId,
+      status: payload.notification?.metadata?.status,
+      gameTitle: payload.notification?.metadata?.gameTitle,
       discordId: payload.discordId,
     });
 
@@ -404,14 +464,14 @@ export class WebhookListener {
       if (success) {
         logger.info('Application status DM sent successfully', {
           discordId: payload.discordId,
-          bookingId: payload.notification.metadata.bookingId,
-          status: payload.notification.metadata.status,
+          bookingId: payload.notification?.metadata?.bookingId,
+          status: payload.notification?.metadata?.status,
         });
       }
     } catch (error) {
       logger.error('Error sending application status DM', error as Error, {
         discordId: payload.discordId,
-        bookingId: payload.notification.metadata.bookingId,
+        bookingId: payload.notification?.metadata?.bookingId,
       });
     }
   }
@@ -421,9 +481,11 @@ export class WebhookListener {
    */
   private async handleSessionCancelled(payload: SessionCancelledWebhook): Promise<void> {
     logger.info('Processing session cancellation', {
-      sessionId: payload.notification.metadata.sessionId,
-      gameTitle: payload.notification.metadata.gameTitle,
+      sessionId: payload.notification?.metadata?.sessionId,
+      gameTitle: payload.notification?.metadata?.gameTitle,
       discordId: payload.discordId,
+      channelId: payload.channelId,
+      notificationMode: payload.notificationMode,
     });
 
     if (!this.dmService) {
@@ -433,18 +495,33 @@ export class WebhookListener {
 
     try {
       const embed = buildSessionCancelledEmbed(payload);
-      const success = await this.dmService.sendDM(payload.discordId, embed);
 
-      if (success) {
-        logger.info('Session cancellation DM sent successfully', {
-          discordId: payload.discordId,
-          sessionId: payload.notification.metadata.sessionId,
-        });
+      // Check if should post to channel
+      if (payload.channelId && payload.notificationMode !== 'DM_ONLY') {
+        await this.sendToChannel(payload.channelId, embed, payload.discordId);
       }
-    } catch (error) {
-      logger.error('Error sending session cancellation DM', error as Error, {
+
+      // Send DM if mode is DM_ONLY, BOTH, or no channel configured
+      if (!payload.channelId || payload.notificationMode === 'DM_ONLY' || payload.notificationMode === 'BOTH') {
+        const success = await this.dmService.sendDM(payload.discordId, embed);
+
+        if (success) {
+          logger.info('Session cancellation DM sent successfully', {
+            discordId: payload.discordId,
+            sessionId: payload.notification?.metadata?.sessionId,
+          });
+        }
+      }
+
+      logger.info('Session cancellation notification sent', {
         discordId: payload.discordId,
-        sessionId: payload.notification.metadata.sessionId,
+        sentToChannel: !!payload.channelId && payload.notificationMode !== 'DM_ONLY',
+        sentToDM: !payload.channelId || payload.notificationMode !== 'CHANNEL_ONLY',
+      });
+    } catch (error) {
+      logger.error('Error sending session cancellation', error as Error, {
+        discordId: payload.discordId,
+        sessionId: payload.notification?.metadata?.sessionId,
       });
     }
   }

@@ -26,6 +26,7 @@ import { myGamesCommand } from '../commands/my-games';
 import { nextSessionCommand } from '../commands/next-session';
 import { profileCommand } from '../commands/profile';
 import { attendanceCommand } from '../commands/attendance';
+import { setGameChannelCommand } from '../commands/set-game-channel';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -152,13 +153,14 @@ export class ArcaneBot {
       myGamesCommand,
       nextSessionCommand,
       profileCommand,
-      attendanceCommand
+      attendanceCommand,
+      setGameChannelCommand
     ];
-    
+
     commands.forEach(command => {
       this.client.addCommand(command);
     });
-    
+
     logInfo(`Loaded ${commands.length} commands`);
   }
   

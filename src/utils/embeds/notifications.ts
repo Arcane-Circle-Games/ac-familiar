@@ -11,40 +11,73 @@ import {
  */
 export function buildSessionReminderEmbed(webhook: SessionReminderWebhook): EmbedBuilder {
   const { metadata } = webhook.notification;
-  const scheduledTime = new Date(metadata.scheduledTime);
-  const timestamp = Math.floor(scheduledTime.getTime() / 1000);
 
-  return new EmbedBuilder()
+  // Handle missing or incomplete metadata gracefully
+  const gameTitle = metadata?.gameTitle || 'Unknown Game';
+  const sessionNumber = metadata?.sessionNumber || 0;
+  const gmName = metadata?.gmName || 'Unknown GM';
+  const scheduledTime = metadata?.scheduledTime ? new Date(metadata.scheduledTime) : null;
+
+  const embed = new EmbedBuilder()
     .setColor(0xFFD700) // Gold color for reminders
     .setTitle('⏰ Session Starting Soon!')
     .setDescription(
-      `Your session for **${metadata.gameTitle}** starts in 2 hours!`
+      webhook.notification.message || `Your session for **${gameTitle}** starts soon!`
     )
-    .addFields([
-      {
-        name: '🎮 Game',
-        value: metadata.gameTitle,
-        inline: true
-      },
-      {
-        name: '📅 Session',
-        value: `Session ${metadata.sessionNumber}`,
-        inline: true
-      },
-      {
-        name: '🎲 Game Master',
-        value: metadata.gmName,
-        inline: true
-      },
-      {
-        name: '🕐 Start Time',
-        value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
-        inline: false
-      }
-    ])
     .setFooter({ text: 'Arcane Circle • Session Reminder' })
-    .setTimestamp()
-    .setURL(webhook.notification.actionUrl);
+    .setTimestamp();
+
+  // Build fields array dynamically
+  const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
+
+  // Add game title
+  if (gameTitle) {
+    fields.push({
+      name: '🎮 Game',
+      value: gameTitle,
+      inline: true
+    });
+  }
+
+  // Add session number
+  if (sessionNumber > 0) {
+    fields.push({
+      name: '📅 Session',
+      value: `Session ${sessionNumber}`,
+      inline: true
+    });
+  }
+
+  // Add GM name
+  if (gmName && gmName !== 'Unknown GM') {
+    fields.push({
+      name: '🎲 Game Master',
+      value: gmName,
+      inline: true
+    });
+  }
+
+  // Add start time if available
+  if (scheduledTime && !isNaN(scheduledTime.getTime())) {
+    const timestamp = Math.floor(scheduledTime.getTime() / 1000);
+    fields.push({
+      name: '🕐 Start Time',
+      value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
+      inline: false
+    });
+  }
+
+  // Only add fields if we have any
+  if (fields.length > 0) {
+    embed.addFields(fields);
+  }
+
+  // Add action URL if available
+  if (webhook.notification.actionUrl) {
+    embed.setURL(webhook.notification.actionUrl);
+  }
+
+  return embed;
 }
 
 /**
@@ -53,47 +86,70 @@ export function buildSessionReminderEmbed(webhook: SessionReminderWebhook): Embe
 export function buildBookingConfirmedEmbed(webhook: BookingConfirmedWebhook): EmbedBuilder {
   const { metadata } = webhook.notification;
 
+  // Handle missing or incomplete metadata gracefully
+  const gameTitle = metadata?.gameTitle || 'Unknown Game';
+  const gmName = metadata?.gmName || 'Unknown GM';
+
   const embed = new EmbedBuilder()
     .setColor(0x00D4AA) // Arcane Circle mint color
     .setTitle('✅ Booking Confirmed!')
     .setDescription(
-      `You're all set for **${metadata.gameTitle}**!`
+      webhook.notification.message || `You're all set for **${gameTitle}**!`
     )
-    .addFields([
-      {
-        name: '🎮 Game',
-        value: metadata.gameTitle,
-        inline: false
-      },
-      {
-        name: '🎲 Game Master',
-        value: metadata.gmName,
-        inline: true
-      }
-    ])
     .setFooter({ text: 'Arcane Circle • Booking Confirmation' })
-    .setTimestamp()
-    .setURL(webhook.notification.actionUrl);
+    .setTimestamp();
 
-  // Add next session time if available
-  if (metadata.nextSessionTime) {
-    const nextSession = new Date(metadata.nextSessionTime);
-    const timestamp = Math.floor(nextSession.getTime() / 1000);
+  // Build fields array dynamically
+  const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
 
-    embed.addFields({
-      name: '📅 Next Session',
-      value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
+  // Add game title
+  if (gameTitle) {
+    fields.push({
+      name: '🎮 Game',
+      value: gameTitle,
       inline: false
     });
   }
 
+  // Add GM name
+  if (gmName && gmName !== 'Unknown GM') {
+    fields.push({
+      name: '🎲 Game Master',
+      value: gmName,
+      inline: true
+    });
+  }
+
+  // Add next session time if available
+  if (metadata?.nextSessionTime) {
+    const nextSession = new Date(metadata.nextSessionTime);
+    if (!isNaN(nextSession.getTime())) {
+      const timestamp = Math.floor(nextSession.getTime() / 1000);
+      fields.push({
+        name: '📅 Next Session',
+        value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
+        inline: false
+      });
+    }
+  }
+
   // Add price if available
-  if (metadata.price) {
-    embed.addFields({
+  if (metadata?.price && typeof metadata.price === 'number') {
+    fields.push({
       name: '💰 Price',
       value: `$${metadata.price.toFixed(2)}`,
       inline: true
     });
+  }
+
+  // Only add fields if we have any
+  if (fields.length > 0) {
+    embed.addFields(fields);
+  }
+
+  // Add action URL if available
+  if (webhook.notification.actionUrl) {
+    embed.setURL(webhook.notification.actionUrl);
   }
 
   return embed;
@@ -104,36 +160,63 @@ export function buildBookingConfirmedEmbed(webhook: BookingConfirmedWebhook): Em
  */
 export function buildApplicationStatusEmbed(webhook: ApplicationStatusWebhook): EmbedBuilder {
   const { metadata } = webhook.notification;
-  const isApproved = metadata.status === 'approved';
 
-  return new EmbedBuilder()
+  // Handle missing or incomplete metadata gracefully
+  const isApproved = metadata?.status === 'approved';
+  const gameTitle = metadata?.gameTitle || 'Unknown Game';
+  const gmName = metadata?.gmName || 'Unknown GM';
+
+  const embed = new EmbedBuilder()
     .setColor(isApproved ? 0x00FF00 : 0xFF6B6B) // Green for approved, red for declined
     .setTitle(isApproved ? '✅ Application Approved!' : '❌ Application Declined')
     .setDescription(
-      isApproved
-        ? `Your application to join **${metadata.gameTitle}** has been approved!`
-        : `Your application to join **${metadata.gameTitle}** was not accepted this time.`
+      webhook.notification.message ||
+      (isApproved
+        ? `Your application to join **${gameTitle}** has been approved!`
+        : `Your application to join **${gameTitle}** was not accepted this time.`)
     )
-    .addFields([
-      {
-        name: '🎮 Game',
-        value: metadata.gameTitle,
-        inline: false
-      },
-      {
-        name: '🎲 Game Master',
-        value: metadata.gmName,
-        inline: true
-      },
-      {
-        name: '📋 Status',
-        value: isApproved ? 'Approved' : 'Declined',
-        inline: true
-      }
-    ])
     .setFooter({ text: 'Arcane Circle • Application Update' })
-    .setTimestamp()
-    .setURL(webhook.notification.actionUrl);
+    .setTimestamp();
+
+  // Build fields array dynamically
+  const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
+
+  // Add game title
+  if (gameTitle) {
+    fields.push({
+      name: '🎮 Game',
+      value: gameTitle,
+      inline: false
+    });
+  }
+
+  // Add GM name
+  if (gmName && gmName !== 'Unknown GM') {
+    fields.push({
+      name: '🎲 Game Master',
+      value: gmName,
+      inline: true
+    });
+  }
+
+  // Add status
+  fields.push({
+    name: '📋 Status',
+    value: isApproved ? 'Approved' : 'Declined',
+    inline: true
+  });
+
+  // Only add fields if we have any
+  if (fields.length > 0) {
+    embed.addFields(fields);
+  }
+
+  // Add action URL if available
+  if (webhook.notification.actionUrl) {
+    embed.setURL(webhook.notification.actionUrl);
+  }
+
+  return embed;
 }
 
 /**
@@ -141,48 +224,80 @@ export function buildApplicationStatusEmbed(webhook: ApplicationStatusWebhook): 
  */
 export function buildSessionCancelledEmbed(webhook: SessionCancelledWebhook): EmbedBuilder {
   const { metadata } = webhook.notification;
-  const scheduledTime = new Date(metadata.scheduledTime);
-  const timestamp = Math.floor(scheduledTime.getTime() / 1000);
+
+  // Handle missing or incomplete metadata gracefully
+  const gameTitle = metadata?.gameTitle || 'Unknown Game';
+  const sessionNumber = metadata?.sessionNumber || 0;
+  const gmName = metadata?.gmName || 'Unknown GM';
+  const scheduledTime = metadata?.scheduledTime ? new Date(metadata.scheduledTime) : null;
 
   const embed = new EmbedBuilder()
     .setColor(0xFF0000) // Red for cancellations
     .setTitle('❌ Session Cancelled')
     .setDescription(
-      `Session ${metadata.sessionNumber} for **${metadata.gameTitle}** has been cancelled.`
+      webhook.notification.message ||
+      `Session ${sessionNumber > 0 ? sessionNumber : ''} for **${gameTitle}** has been cancelled.`
     )
-    .addFields([
-      {
-        name: '🎮 Game',
-        value: metadata.gameTitle,
-        inline: false
-      },
-      {
-        name: '📅 Was Scheduled For',
-        value: `<t:${timestamp}:F>`,
-        inline: false
-      },
-      {
-        name: '🎲 Game Master',
-        value: metadata.gmName,
-        inline: true
-      },
-      {
-        name: '📋 Session',
-        value: `Session ${metadata.sessionNumber}`,
-        inline: true
-      }
-    ])
     .setFooter({ text: 'Arcane Circle • Session Update' })
-    .setTimestamp()
-    .setURL(webhook.notification.actionUrl);
+    .setTimestamp();
+
+  // Build fields array dynamically
+  const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
+
+  // Add game title
+  if (gameTitle) {
+    fields.push({
+      name: '🎮 Game',
+      value: gameTitle,
+      inline: false
+    });
+  }
+
+  // Add scheduled time if available
+  if (scheduledTime && !isNaN(scheduledTime.getTime())) {
+    const timestamp = Math.floor(scheduledTime.getTime() / 1000);
+    fields.push({
+      name: '📅 Was Scheduled For',
+      value: `<t:${timestamp}:F>`,
+      inline: false
+    });
+  }
+
+  // Add GM name
+  if (gmName && gmName !== 'Unknown GM') {
+    fields.push({
+      name: '🎲 Game Master',
+      value: gmName,
+      inline: true
+    });
+  }
+
+  // Add session number
+  if (sessionNumber > 0) {
+    fields.push({
+      name: '📋 Session',
+      value: `Session ${sessionNumber}`,
+      inline: true
+    });
+  }
 
   // Add cancellation reason if provided
-  if (metadata.reason) {
-    embed.addFields({
+  if (metadata?.reason) {
+    fields.push({
       name: '📝 Reason',
       value: metadata.reason,
       inline: false
     });
+  }
+
+  // Only add fields if we have any
+  if (fields.length > 0) {
+    embed.addFields(fields);
+  }
+
+  // Add action URL if available
+  if (webhook.notification.actionUrl) {
+    embed.setURL(webhook.notification.actionUrl);
   }
 
   return embed;

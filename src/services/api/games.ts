@@ -318,6 +318,39 @@ export class GameService {
       throw error;
     }
   }
+
+  // Set Discord channel for game notifications
+  public async setDiscordChannel(
+    gameId: string,
+    config: {
+      discordServerId: string;
+      discordChannelId: string;
+      notificationMode: 'DM_ONLY' | 'CHANNEL_ONLY' | 'BOTH';
+    },
+    discordUserId: string
+  ): Promise<any> {
+    try {
+      logInfo('Setting Discord channel for game', {
+        gameId,
+        channelId: config.discordChannelId,
+        serverId: config.discordServerId,
+        mode: config.notificationMode,
+        discordUserId,
+      });
+
+      await apiClient.authenticateWithDiscord(discordUserId);
+
+      const response = await apiClient.patch(`/games/${gameId}/discord-channel`, config);
+      return response.data;
+    } catch (error) {
+      logError('Failed to set Discord channel', error as Error, {
+        gameId,
+        config,
+        discordUserId,
+      });
+      throw error;
+    }
+  }
 }
 
 export const gameService = new GameService();

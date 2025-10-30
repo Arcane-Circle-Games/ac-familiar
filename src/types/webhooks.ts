@@ -29,6 +29,12 @@ export interface BaseNotificationWebhook extends WebhookPayload {
   event: NotificationEventType;
   userId: string;
   discordId: string;
+
+  // Discord channel routing (optional)
+  channelId?: string;
+  serverId?: string;
+  notificationMode?: 'DM_ONLY' | 'CHANNEL_ONLY' | 'BOTH';
+
   notification: {
     type: string;
     title: string;
