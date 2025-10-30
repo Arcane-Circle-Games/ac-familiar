@@ -22,6 +22,9 @@ import { gmBookingsCommand } from '../commands/gm-bookings';
 import { gmStatsCommand } from '../commands/gm-stats';
 import { recordCommand, recordingManager } from '../commands/record';
 import { leaveGameCommand } from '../commands/leave-game';
+import { myGamesCommand } from '../commands/my-games';
+import { nextSessionCommand } from '../commands/next-session';
+import { profileCommand } from '../commands/profile';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -144,7 +147,10 @@ export class ArcaneBot {
       gmBookingsCommand,
       gmStatsCommand,
       recordCommand,
-      leaveGameCommand
+      leaveGameCommand,
+      myGamesCommand,
+      nextSessionCommand,
+      profileCommand
     ];
     
     commands.forEach(command => {
