@@ -22,23 +22,53 @@ export type TierExemptCommand = typeof TIER_EXEMPT_COMMANDS[number];
 
 /**
  * Check if a user has an authorized tier for bot access
+ * Checks both tier and subscriptionTier fields (inclusive OR)
  */
 export function hasAuthorizedTier(user: User | null | undefined): boolean {
-  if (!user || !user.tier) {
-    logInfo('User has no tier assigned', { userId: user?.id, user });
+  if (!user) {
+    logInfo('User is null or undefined');
     return false;
   }
 
-  const hasAccess = AUTHORIZED_TIERS.includes(user.tier as AuthorizedTier);
+  // Check if either tier OR subscriptionTier has an authorized value
+  const tierAuthorized = Boolean(user.tier && AUTHORIZED_TIERS.includes(user.tier as AuthorizedTier));
+  const subscriptionTierAuthorized = Boolean(user.subscriptionTier && AUTHORIZED_TIERS.includes(user.subscriptionTier as AuthorizedTier));
+
+  const hasAccess = tierAuthorized || subscriptionTierAuthorized;
 
   logInfo('Tier authorization check', {
     userId: user.id,
     userTier: user.tier,
+    userSubscriptionTier: user.subscriptionTier,
+    tierAuthorized,
+    subscriptionTierAuthorized,
     authorizedTiers: AUTHORIZED_TIERS,
     hasAccess
   });
 
   return hasAccess;
+}
+
+/**
+ * Get the effective tier that grants access (whichever is authorized)
+ * Returns tier or subscriptionTier, prioritizing subscriptionTier if both are valid
+ */
+export function getEffectiveTier(user: User | null | undefined): string | null {
+  if (!user) {
+    return null;
+  }
+
+  // Prioritize subscriptionTier if it's authorized
+  if (user.subscriptionTier && AUTHORIZED_TIERS.includes(user.subscriptionTier as AuthorizedTier)) {
+    return user.subscriptionTier;
+  }
+
+  // Fall back to tier if it's authorized
+  if (user.tier && AUTHORIZED_TIERS.includes(user.tier as AuthorizedTier)) {
+    return user.tier;
+  }
+
+  return null;
 }
 
 /**

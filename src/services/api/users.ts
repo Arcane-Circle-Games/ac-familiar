@@ -8,6 +8,7 @@ export interface User {
   discordId?: string;
   discordUsername?: string;
   tier?: string; // User access tier (e.g., "Alpha", "Wizard_Backer")
+  subscriptionTier?: string; // Subscription-based tier (e.g., "Alpha", "Wizard_Backer")
   profile?: {
     id: string;
     firstName: string;
