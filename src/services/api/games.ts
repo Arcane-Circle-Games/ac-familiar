@@ -340,7 +340,10 @@ export class GameService {
 
       await apiClient.authenticateWithDiscord(discordUserId);
 
-      const response = await apiClient.patch(`/games/${gameId}/discord-channel`, config);
+      const response = await apiClient.patch(`/games/${gameId}/discord-channel`, {
+        ...config,
+        discordUserId
+      });
       return response.data;
     } catch (error) {
       logError('Failed to set Discord channel', error as Error, {
