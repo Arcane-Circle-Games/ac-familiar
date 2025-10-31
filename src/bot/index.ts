@@ -12,6 +12,7 @@ import { arcaneAPI } from '../services/api';
 import { pingCommand } from '../commands/ping';
 import { diagnosticsCommand } from '../commands/diagnostics';
 import { linkCommand } from '../commands/link';
+import { helpCommand } from '../commands/help';
 import { gamesCommand } from '../commands/games';
 import { searchGamesCommand } from '../commands/search-games';
 import { joinGameCommand } from '../commands/join-game';
@@ -140,6 +141,7 @@ export class ArcaneBot {
       pingCommand,
       diagnosticsCommand,
       linkCommand,
+      helpCommand,
       gamesCommand,
       searchGamesCommand,
       joinGameCommand,
