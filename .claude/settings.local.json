@@ -34,7 +34,8 @@
       "Bash(node reconstruct-nysira.js)",
       "Bash(node merge-transcripts.js)",
       "WebFetch(domain:claude.ai)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Read(//Users/mcarmody/Documents/ArcaneCircle/**)"
     ],
     "deny": [],
     "ask": []
