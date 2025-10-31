@@ -125,6 +125,8 @@ export class GameService {
     gmId?: string;
     page?: number;
     limit?: number;
+    sort?: string;
+    order?: 'asc' | 'desc';
   }) {
     try {
       logInfo('Fetching games list', { filters });

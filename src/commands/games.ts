@@ -26,9 +26,10 @@ export const gamesCommand: Command = {
       });
       
       // Fetch games from the platform
-      const games = await arcaneAPI.games.listGames({ 
-        limit: 10,
-        status: 'PUBLISHED'
+      const games = await arcaneAPI.games.listGames({
+        status: 'PUBLISHED',
+        sort: 'publishedAt',
+        order: 'desc'
       });
       
       if (!games || games.length === 0) {
