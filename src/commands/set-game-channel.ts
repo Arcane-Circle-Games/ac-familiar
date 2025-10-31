@@ -68,6 +68,11 @@ export const setGameChannelCommand: Command = {
           ]);
         }
 
+        // DEBUG: Log what we're getting from the API
+        if (games.length > 0) {
+          console.log('First game from API:', JSON.stringify(games[0], null, 2));
+        }
+
         // Return autocomplete choices (max 25)
         const choices = games
           .map((game) => ({
