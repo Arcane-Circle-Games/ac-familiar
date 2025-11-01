@@ -42,7 +42,7 @@ export const helpCommand: Command = {
             value:
               '`/record action:start` - Start recording voice channel\n' +
               '`/record action:stop-save` - Stop and save recording\n' +
-              '**Note:** Recordings are automatically transcribed by the platform API',
+              '**Note:** Recordings are uploaded to the Arcane Circle platform',
             inline: false
           },
           {
