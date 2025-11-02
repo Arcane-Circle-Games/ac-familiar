@@ -23,7 +23,8 @@ export type NotificationEventType =
   | 'notification.session.reminder'
   | 'notification.booking.confirmed'
   | 'notification.application.status'
-  | 'notification.session.cancelled';
+  | 'notification.session.cancelled'
+  | 'notification.game.published';
 
 export interface BaseNotificationWebhook extends WebhookPayload {
   event: NotificationEventType;
@@ -120,12 +121,45 @@ export interface SessionCancelledWebhook extends BaseNotificationWebhook {
   };
 }
 
+// Game Published (Channel Announcement)
+export interface GamePublishedWebhook extends WebhookPayload {
+  event: 'notification.game.published';
+  gameId: string;
+  channelId: string; // Target announcement channel
+  game: {
+    id: string;
+    title: string;
+    description: string;
+    system: {
+      name: string;
+      shortName?: string;
+    };
+    gameType: string;
+    gm: {
+      displayName: string;
+      profile: {
+        verified: boolean;
+        averageRating: number;
+        totalRatings: number;
+      };
+    };
+    startTime: string; // ISO 8601 timestamp
+    duration: number; // hours
+    pricePerSession: number;
+    maxPlayers: number;
+    availableSlots: number;
+    publishedAt: string; // ISO 8601 timestamp
+    url: string; // Full URL to game page
+  };
+}
+
 // Union type for all notification webhooks
 export type NotificationWebhook =
   | SessionReminderWebhook
   | BookingConfirmedWebhook
   | ApplicationStatusWebhook
-  | SessionCancelledWebhook;
+  | SessionCancelledWebhook
+  | GamePublishedWebhook;
 
 // Union type for all webhook payloads
 export type ArcaneWebhookPayload =
