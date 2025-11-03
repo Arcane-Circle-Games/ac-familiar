@@ -95,11 +95,19 @@ export class WebhookListener {
         // Process notification webhook
         const payload = req.body as NotificationWebhook;
 
-        logger.info(`Received notification webhook: ${payload.event}`, {
-          userId: payload.userId,
-          discordId: payload.discordId,
-          notificationType: payload.notification.type,
-        });
+        // Log different info based on webhook type
+        if (payload.event === 'notification.game.published') {
+          logger.info(`Received notification webhook: ${payload.event}`, {
+            gameId: payload.gameId,
+            channelId: payload.channelId,
+          });
+        } else {
+          logger.info(`Received notification webhook: ${payload.event}`, {
+            userId: payload.userId,
+            discordId: payload.discordId,
+            notificationType: payload.notification.type,
+          });
+        }
 
         await this.handleNotificationWebhook(payload);
 
