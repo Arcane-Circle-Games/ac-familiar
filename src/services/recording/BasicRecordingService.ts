@@ -150,9 +150,15 @@ export class BasicRecordingService {
         }
       );
 
+      // Free buffer memory immediately after WAV conversion
+      const bufferCount = segment.bufferChunks.length;
+      const bufferSizeMB = segment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0) / 1024 / 1024;
+      segment.bufferChunks = [];
+
       logger.info(`Segment ${segment.segmentIndex} written to disk`, {
         filePath: processedTrack.filePath,
-        fileSize: processedTrack.fileSize
+        fileSize: processedTrack.fileSize,
+        freedMemory: `${Math.round(bufferSizeMB)}MB (${bufferCount} chunks)`
       });
 
       // Step 2: Upload to cloud if recordingId available
@@ -519,22 +525,26 @@ export class BasicRecordingService {
 
           // Only process segments that meet minimum duration requirement
           if (prevSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
+            const bufferSizeMB = prevSegment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0) / 1024 / 1024;
+
             logger.debug(
               `Finalizing segment ${prevSegment.segmentIndex} for user ${userId}: ` +
-              `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}`
+              `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}, size=${Math.round(bufferSizeMB)}MB`
             );
 
-            // Copy bufferChunks before clearing them
-            const bufferChunksCopy = [...prevSegment.bufferChunks];
-            const segmentCopy = { ...prevSegment, bufferChunks: bufferChunksCopy };
+            // Move bufferChunks to segmentCopy (transfer ownership, no copying)
+            const segmentCopy = {
+              ...prevSegment,
+              bufferChunks: prevSegment.bufferChunks  // Transfer reference, not copy
+            };
 
-            // Clear original buffers from memory immediately
+            // Clear original reference immediately
             prevSegment.bufferChunks = [];
 
             // Write to disk and upload to cloud (async, don't wait)
             this.writeAndUploadSegment(session, segmentCopy)
               .then(() => {
-                logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded and memory cleared`);
+                logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
               })
               .catch((error) => {
                 logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, error);
