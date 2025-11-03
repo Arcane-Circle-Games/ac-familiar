@@ -517,7 +517,56 @@ export class BasicRecordingService {
           userRecording.segmentCount++;
 
           logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
-        } else if (currentTime - userRecording.lastChunkTime > silenceThreshold) {
+        } else {
+          // Check if current segment exceeds maximum size
+          const currentBufferSize = userRecording.currentSegment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const maxSizeBytes = config.RECORDING_MAX_SEGMENT_SIZE_MB * 1024 * 1024;
+
+          if (currentBufferSize >= maxSizeBytes) {
+            // Force-finalize segment due to size limit
+            const prevSegment = userRecording.currentSegment;
+            prevSegment.absoluteEndTime = Date.now();
+            prevSegment.duration = prevSegment.absoluteEndTime - prevSegment.absoluteStartTime;
+
+            const bufferSizeMB = currentBufferSize / 1024 / 1024;
+
+            logger.warn(
+              `Force-finalizing segment ${prevSegment.segmentIndex} for user ${userId} due to size limit: ` +
+              `size=${Math.round(bufferSizeMB)}MB (max=${config.RECORDING_MAX_SEGMENT_SIZE_MB}MB), ` +
+              `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}`
+            );
+
+            // Move bufferChunks to segmentCopy (transfer ownership, no copying)
+            const segmentCopy = {
+              ...prevSegment,
+              bufferChunks: prevSegment.bufferChunks
+            };
+
+            // Clear original reference immediately
+            prevSegment.bufferChunks = [];
+
+            // Write to disk and upload to cloud (async, don't wait)
+            this.writeAndUploadSegment(session, segmentCopy)
+              .then(() => {
+                logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
+              })
+              .catch((error) => {
+                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, error);
+                userRecording.completedSegments.push(segmentCopy);
+              });
+
+            // Start new segment
+            userRecording.currentSegment = {
+              userId,
+              username: userRecording.username,
+              segmentIndex: userRecording.segmentCount,
+              bufferChunks: [chunk],
+              absoluteStartTime: Date.now()
+            };
+            userRecording.segmentCount++;
+
+            logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms (after size limit split)`);
+          } else if (currentTime - userRecording.lastChunkTime > silenceThreshold) {
           // Gap detected - finalize current segment, upload it, and start new one
           const prevSegment = userRecording.currentSegment;
           prevSegment.absoluteEndTime = session.startTime + userRecording.lastChunkTime;
@@ -569,9 +618,10 @@ export class BasicRecordingService {
           userRecording.segmentCount++;
 
           logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
-        } else {
-          // Continue current segment
-          userRecording.currentSegment.bufferChunks.push(chunk);
+          } else {
+            // Continue current segment
+            userRecording.currentSegment.bufferChunks.push(chunk);
+          }
         }
 
         userRecording.lastChunkTime = currentTime;

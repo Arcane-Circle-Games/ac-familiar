@@ -871,7 +871,18 @@ export class RecordingUploadService {
 
       return { blobUrl, blobPath };
     } catch (error: any) {
-      logger.error(`Failed to upload segment ${metadata.segmentIndex}`, error);
+      // Sanitize error to avoid logging large buffers
+      const sanitizedError = {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        // Exclude config.data which contains the file buffer
+        url: error.config?.url,
+        method: error.config?.method
+      };
+
+      logger.error(`Failed to upload segment ${metadata.segmentIndex}`, sanitizedError);
       throw error;
     }
   }

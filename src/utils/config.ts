@@ -41,6 +41,7 @@ const configSchema = z.object({
   // Segment-Based Recording Configuration
   RECORDING_SILENCE_THRESHOLD: z.coerce.number().min(500).max(10000).default(2000), // ms
   RECORDING_MIN_SEGMENT_DURATION: z.coerce.number().min(100).max(5000).default(500), // ms
+  RECORDING_MAX_SEGMENT_SIZE_MB: z.coerce.number().min(1).max(50).default(10), // Max segment size in MB before force-finalize
   RECORDING_SEGMENT_PARALLEL_LIMIT: z.coerce.number().min(1).max(20).default(5),
   
   // Session Management
