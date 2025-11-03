@@ -18,12 +18,14 @@ import {
   BookingConfirmedWebhook,
   ApplicationStatusWebhook,
   SessionCancelledWebhook,
+  GamePublishedWebhook,
 } from '../../types/webhooks';
 import {
   buildSessionReminderEmbed,
   buildBookingConfirmedEmbed,
   buildApplicationStatusEmbed,
   buildSessionCancelledEmbed,
+  buildGamePublishedEmbed,
 } from '../../utils/embeds/notifications';
 import { ArcaneBot } from '../../bot';
 import DMService from '../discord/DMService';
@@ -305,6 +307,10 @@ export class WebhookListener {
         await this.handleSessionCancelled(payload);
         break;
 
+      case 'notification.game.published':
+        await this.handleGamePublished(payload);
+        break;
+
       default:
         logger.warn(`Unknown notification event: ${(payload as any).event}`);
     }
@@ -522,6 +528,54 @@ export class WebhookListener {
       logger.error('Error sending session cancellation', error as Error, {
         discordId: payload.discordId,
         sessionId: payload.notification?.metadata?.sessionId,
+      });
+    }
+  }
+
+  /**
+   * Handle game published notification
+   */
+  private async handleGamePublished(payload: GamePublishedWebhook): Promise<void> {
+    logger.info('Processing game published notification', {
+      gameId: payload.gameId,
+      gameTitle: payload.game.title,
+      channelId: payload.channelId,
+    });
+
+    if (!this.bot) {
+      logger.warn('Bot not set, cannot send Discord notification');
+      return;
+    }
+
+    try {
+      // Get Discord channel
+      const channel = await this.bot.client.channels.fetch(payload.channelId);
+
+      if (!channel || !channel.isTextBased()) {
+        logger.warn(`Channel ${payload.channelId} not found or not text-based`);
+        return;
+      }
+
+      // Build the announcement embed
+      const embed = buildGamePublishedEmbed(payload);
+
+      // Send the announcement to the channel
+      if ('send' in channel) {
+        await channel.send({
+          content: '# 🎮 New Game Available!',
+          embeds: [embed],
+        });
+      }
+
+      logger.info('Game published notification sent successfully', {
+        channelId: payload.channelId,
+        gameId: payload.gameId,
+        gameTitle: payload.game.title,
+      });
+    } catch (error) {
+      logger.error('Failed to send game published notification', error as Error, {
+        channelId: payload.channelId,
+        gameId: payload.gameId,
       });
     }
   }

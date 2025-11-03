@@ -3,7 +3,8 @@ import {
   SessionReminderWebhook,
   BookingConfirmedWebhook,
   ApplicationStatusWebhook,
-  SessionCancelledWebhook
+  SessionCancelledWebhook,
+  GamePublishedWebhook
 } from '../../types/webhooks';
 
 /**
@@ -301,4 +302,142 @@ export function buildSessionCancelledEmbed(webhook: SessionCancelledWebhook): Em
   }
 
   return embed;
+}
+
+/**
+ * Build Discord embed for game published notification
+ */
+export function buildGamePublishedEmbed(webhook: GamePublishedWebhook): EmbedBuilder {
+  const { game } = webhook;
+
+  // Convert HTML description to plain text and truncate
+  const cleanDescription = htmlToMarkdown(game.description);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x00d4ff) // Arcane Circle brand color
+    .setTitle(`🎮 ${game.title}`)
+    .setDescription(truncateText(cleanDescription, 300))
+    .setURL(game.url)
+    .setTimestamp(new Date(game.publishedAt))
+    .setFooter({ text: 'Arcane Circle • New Game' });
+
+  // Game details field
+  const gameDetails = [
+    `**System:** ${game.system.shortName || game.system.name}`,
+    `**Type:** ${formatGameType(game.gameType)}`,
+    `**GM:** ${game.gm.displayName}${game.gm.profile.verified ? ' ✓' : ''}`
+  ];
+
+  if (game.gm.profile.totalRatings > 0) {
+    gameDetails.push(`**Rating:** ⭐ ${game.gm.profile.averageRating} (${game.gm.profile.totalRatings} reviews)`);
+  }
+
+  embed.addFields({
+    name: '📋 Game Details',
+    value: gameDetails.join('\n'),
+    inline: false
+  });
+
+  // Session info field
+  const startTime = new Date(game.startTime);
+  const timestamp = Math.floor(startTime.getTime() / 1000);
+  const sessionInfo = [
+    `**Start Time:** <t:${timestamp}:F>`,
+    `**Duration:** ${game.duration} hours`,
+    `**Price:** $${game.pricePerSession}/session`
+  ];
+
+  embed.addFields({
+    name: '📅 Session Info',
+    value: sessionInfo.join('\n'),
+    inline: false
+  });
+
+  // Availability field
+  const availabilityText = game.availableSlots > 0
+    ? `${game.availableSlots} of ${game.maxPlayers} slots available`
+    : 'Game is full';
+
+  embed.addFields({
+    name: '👥 Availability',
+    value: availabilityText,
+    inline: true
+  });
+
+  // Quick join command
+  embed.addFields({
+    name: '⚡ Quick Join',
+    value: `\`/join-game game-id:${game.id}\``,
+    inline: true
+  });
+
+  return embed;
+}
+
+/**
+ * Convert HTML to Discord markdown and strip remaining tags
+ */
+function htmlToMarkdown(html: string): string {
+  if (!html) return '';
+
+  let text = html;
+
+  // Convert common HTML tags to Discord markdown
+  text = text.replace(/<strong>(.*?)<\/strong>/gi, '**$1**'); // bold
+  text = text.replace(/<b>(.*?)<\/b>/gi, '**$1**'); // bold
+  text = text.replace(/<em>(.*?)<\/em>/gi, '*$1*'); // italic
+  text = text.replace(/<i>(.*?)<\/i>/gi, '*$1*'); // italic
+  text = text.replace(/<u>(.*?)<\/u>/gi, '__$1__'); // underline
+  text = text.replace(/<code>(.*?)<\/code>/gi, '`$1`'); // inline code
+
+  // Handle line breaks
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<p>/gi, '');
+
+  // Handle lists
+  text = text.replace(/<li>(.*?)<\/li>/gi, '• $1\n');
+  text = text.replace(/<\/?[uo]l>/gi, '');
+
+  // Strip all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Decode common HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+
+  // Clean up excessive whitespace
+  text = text.replace(/\n\n\n+/g, '\n\n'); // max 2 newlines
+  text = text.trim();
+
+  return text;
+}
+
+/**
+ * Truncate text to fit Discord embed limits
+ */
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return text.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Format game type for display
+ */
+function formatGameType(gameType: string): string {
+  const typeMap: Record<string, string> = {
+    'CAMPAIGN': 'Campaign',
+    'ONE_SHOT': 'One-Shot',
+    'MINI_CAMPAIGN': 'Mini Campaign',
+    'WEST_MARCHES': 'West Marches'
+  };
+
+  return typeMap[gameType] || gameType;
 }
