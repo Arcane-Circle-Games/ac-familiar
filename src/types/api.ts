@@ -1,10 +1,13 @@
 export interface User {
   id: string;
-  username: string;
+  username: string; // Note: API returns displayName, but keeping username for backwards compat
   email: string;
   discordId?: string;
-  avatarUrl?: string;
-  tier?: string; // User access tier (e.g., "Alpha", "Wizard_Backer")
+  discordUsername?: string;
+  avatarUrl?: string; // Note: API returns profileImage
+  isGM?: boolean;
+  tier?: string | null; // User access tier (e.g., "Alpha", "Wizard_Backer", "admin")
+  subscriptionTier?: string | null; // Active subscription tier (e.g., "free", "apprentice", "wizard")
   createdAt?: string;
   updatedAt?: string;
 }
