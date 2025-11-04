@@ -151,6 +151,21 @@ export const setGameChannelCommand: Command = {
       // Fetch game details to post confirmation in the channel
       const game = await arcaneAPI.games.getGame(gameId);
 
+      // Fetch sessions for the game to find the next upcoming session
+      const sessions = await arcaneAPI.sessions.getGameSessions(gameId);
+      const now = new Date();
+      const upcomingSessions = sessions
+        .filter(
+          (s) =>
+            s.status === 'scheduled' &&
+            new Date(s.scheduledFor) > now
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime()
+        );
+      const nextSession = upcomingSessions.length > 0 ? upcomingSessions[0] : null;
+
       // Create confirmation embed for the channel with game details
       const channelEmbed = new EmbedBuilder()
         .setColor(0x00d4aa)
@@ -182,12 +197,12 @@ export const setGameChannelCommand: Command = {
         });
       }
 
-      if (game.startTime) {
+      if (nextSession) {
         try {
-          const startDate = new Date(game.startTime);
+          const sessionDate = new Date(nextSession.scheduledFor);
           fields.push({
             name: '⏰ Next Session',
-            value: `<t:${Math.floor(startDate.getTime() / 1000)}:F>`,
+            value: `<t:${Math.floor(sessionDate.getTime() / 1000)}:F>`,
             inline: false,
           });
         } catch (e) {
