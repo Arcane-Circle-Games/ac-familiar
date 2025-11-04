@@ -30,17 +30,17 @@ export type TierExemptCommand = typeof TIER_EXEMPT_COMMANDS[number];
  */
 export function hasAuthorizedTier(user: User | null | undefined): boolean {
   if (!user) {
-    logInfo('User is null or undefined', { userId: user?.id });
+    logInfo('User is null or undefined');
     return false;
   }
 
   // Check accessTier (alpha, wizard_backer, admin) - case insensitive
   const normalizedTier = user.tier?.toLowerCase().trim();
-  const hasAccessTier = normalizedTier && AUTHORIZED_TIERS.includes(normalizedTier as AuthorizedTier);
+  const hasAccessTier = !!(normalizedTier && AUTHORIZED_TIERS.includes(normalizedTier as AuthorizedTier));
 
   // Check if user has any subscription tier at all - case insensitive
   const normalizedSubscriptionTier = user.subscriptionTier?.toLowerCase().trim();
-  const hasSubscription = normalizedSubscriptionTier && normalizedSubscriptionTier !== '';
+  const hasSubscription = !!(normalizedSubscriptionTier && normalizedSubscriptionTier !== '');
 
   const hasAccess = hasAccessTier || hasSubscription;
 
