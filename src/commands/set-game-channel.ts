@@ -174,37 +174,6 @@ export const setGameChannelCommand: Command = {
         });
       }
 
-      if (game.gm) {
-        const gmName =
-          typeof game.gm === 'string' ? game.gm : game.gm.displayName || 'Unknown';
-        fields.push({
-          name: '🎭 Game Master',
-          value: gmName,
-          inline: true,
-        });
-      }
-
-      if (game.maxPlayers) {
-        const playerCount = game.currentPlayers || 0;
-        fields.push({
-          name: '👥 Players',
-          value: `${playerCount}/${game.maxPlayers}`,
-          inline: true,
-        });
-      }
-
-      if (game.pricePerSession !== undefined && game.pricePerSession !== null) {
-        const price =
-          game.pricePerSession === 0
-            ? 'Free'
-            : `$${game.pricePerSession} ${game.currency || 'USD'}`;
-        fields.push({
-          name: '💰 Price',
-          value: price,
-          inline: true,
-        });
-      }
-
       if (game.frequency) {
         fields.push({
           name: '📅 Frequency',
@@ -228,14 +197,6 @@ export const setGameChannelCommand: Command = {
 
       if (fields.length > 0) {
         channelEmbed.addFields(fields);
-      }
-
-      if (game.shortDescription || game.description) {
-        const desc = game.shortDescription || game.description;
-        channelEmbed.addFields({
-          name: '📖 About',
-          value: desc.substring(0, 1024),
-        });
       }
 
       channelEmbed
