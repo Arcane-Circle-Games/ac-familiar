@@ -4,6 +4,7 @@ import {
   ApplicationCommandOptionType,
   ChannelType,
   EmbedBuilder,
+  TextChannel,
 } from 'discord.js';
 import { Command } from '../bot/client';
 import { arcaneAPI } from '../services/api';
@@ -147,7 +148,115 @@ export const setGameChannelCommand: Command = {
         interaction.user.id
       );
 
-      // Success response
+      // Fetch game details to post confirmation in the channel
+      const game = await arcaneAPI.games.getGame(gameId);
+
+      // Create confirmation embed for the channel with game details
+      const channelEmbed = new EmbedBuilder()
+        .setColor(0x00d4aa)
+        .setTitle('🎲 Game Channel Configured')
+        .setDescription(
+          `This channel will now receive notifications for **${game.title}**`
+        );
+
+      // Add game details
+      const fields: { name: string; value: string; inline?: boolean }[] = [];
+
+      if (game.system) {
+        const systemName =
+          typeof game.system === 'string'
+            ? game.system
+            : game.system.name || game.system.shortName || 'Unknown';
+        fields.push({
+          name: '🎯 System',
+          value: systemName,
+          inline: true,
+        });
+      }
+
+      if (game.gm) {
+        const gmName =
+          typeof game.gm === 'string' ? game.gm : game.gm.displayName || 'Unknown';
+        fields.push({
+          name: '🎭 Game Master',
+          value: gmName,
+          inline: true,
+        });
+      }
+
+      if (game.maxPlayers) {
+        const playerCount = game.currentPlayers || 0;
+        fields.push({
+          name: '👥 Players',
+          value: `${playerCount}/${game.maxPlayers}`,
+          inline: true,
+        });
+      }
+
+      if (game.pricePerSession !== undefined && game.pricePerSession !== null) {
+        const price =
+          game.pricePerSession === 0
+            ? 'Free'
+            : `$${game.pricePerSession} ${game.currency || 'USD'}`;
+        fields.push({
+          name: '💰 Price',
+          value: price,
+          inline: true,
+        });
+      }
+
+      if (game.frequency) {
+        fields.push({
+          name: '📅 Frequency',
+          value: game.frequency,
+          inline: true,
+        });
+      }
+
+      if (game.startTime) {
+        try {
+          const startDate = new Date(game.startTime);
+          fields.push({
+            name: '⏰ Next Session',
+            value: `<t:${Math.floor(startDate.getTime() / 1000)}:F>`,
+            inline: false,
+          });
+        } catch (e) {
+          // Invalid date, skip
+        }
+      }
+
+      if (fields.length > 0) {
+        channelEmbed.addFields(fields);
+      }
+
+      if (game.shortDescription || game.description) {
+        const desc = game.shortDescription || game.description;
+        channelEmbed.addFields({
+          name: '📖 About',
+          value: desc.substring(0, 1024),
+        });
+      }
+
+      channelEmbed
+        .setFooter({ text: 'Arcane Circle • Game Notifications' })
+        .setTimestamp();
+
+      // Post confirmation to the configured channel
+      try {
+        const targetChannel = await interaction.client.channels.fetch(channel.id);
+        if (targetChannel && targetChannel.isTextBased()) {
+          await (targetChannel as TextChannel).send({ embeds: [channelEmbed] });
+        }
+      } catch (error) {
+        logError('Failed to post confirmation to channel', error as Error, {
+          channelId: channel.id,
+          gameId,
+        });
+        // Continue anyway - the configuration was saved
+      }
+
+      // Success response (ephemeral, only visible to command user)
       const embed = new EmbedBuilder()
         .setColor(0x00d4aa)
         .setTitle('✅ Channel Configured')
