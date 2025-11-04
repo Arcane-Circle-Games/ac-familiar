@@ -117,12 +117,27 @@ export class ArcaneCircleAPIClient {
             error.response.status,
             duration
           );
-          
+
+          // Check if response data is a Buffer to avoid logging huge arrays of byte values
+          let responseBody: any;
+          let dataSize = 0;
+
+          if (Buffer.isBuffer(error.response.data)) {
+            responseBody = `[Buffer: ${error.response.data.length} bytes]`;
+            dataSize = error.response.data.length;
+          } else if (error.response.data instanceof Uint8Array) {
+            responseBody = `[Uint8Array: ${error.response.data.length} bytes]`;
+            dataSize = error.response.data.length;
+          } else {
+            responseBody = error.response.data;
+            dataSize = error.response.data ? JSON.stringify(error.response.data).length : 0;
+          }
+
           logError('API Response Error', new Error(error.message), {
             status: error.response.status,
             statusText: error.response.statusText,
-            responseBody: error.response.data,
-            dataSize: error.response.data ? JSON.stringify(error.response.data).length : 0,
+            responseBody,
+            dataSize,
             url: error.config?.url,
             method: error.config?.method
           });

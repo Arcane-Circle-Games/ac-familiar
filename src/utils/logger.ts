@@ -2,8 +2,8 @@ import winston from 'winston';
 import { config } from './config';
 
 /**
- * Safe JSON stringifier that handles circular references
- * Replaces circular references with "[Circular]" instead of throwing
+ * Safe JSON stringifier that handles circular references and Buffers
+ * Replaces circular references with "[Circular]" and Buffers with readable descriptions
  */
 function safeStringify(obj: any, indent: number = 2): string {
   const seen = new WeakSet();
@@ -11,6 +11,17 @@ function safeStringify(obj: any, indent: number = 2): string {
   return JSON.stringify(
     obj,
     (_key, value) => {
+      // Handle Buffers and typed arrays to avoid logging huge arrays of numbers
+      if (Buffer.isBuffer(value)) {
+        return `[Buffer: ${value.length} bytes]`;
+      }
+      if (value instanceof Uint8Array) {
+        return `[Uint8Array: ${value.length} bytes]`;
+      }
+      if (value instanceof ArrayBuffer) {
+        return `[ArrayBuffer: ${value.byteLength} bytes]`;
+      }
+
       // Handle circular references
       if (typeof value === 'object' && value !== null) {
         if (seen.has(value)) {
