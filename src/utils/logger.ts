@@ -134,3 +134,40 @@ export const logRecordingEvent = (event: string, sessionId: string, data?: Recor
     ...data
   });
 };
+
+/**
+ * Sanitize axios error to prevent logging large file buffers
+ * This is critical for upload errors where error.config.data can contain multi-megabyte buffers
+ */
+export const sanitizeAxiosError = (error: any): any => {
+  if (!error) return error;
+
+  // If it's an axios error with config.data containing a buffer
+  if (error.config?.data) {
+    const dataSize = Buffer.isBuffer(error.config.data)
+      ? error.config.data.length
+      : (typeof error.config.data === 'object' ? JSON.stringify(error.config.data).length : 0);
+
+    return {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      method: error.config?.method,
+      dataSize: `${Math.round(dataSize / 1024)}KB`,
+      // Exclude error.config.data to avoid logging large buffers
+      headers: error.config?.headers ? Object.keys(error.config.headers) : undefined,
+      stack: error.stack
+    };
+  }
+
+  // For non-axios errors, just return basic error info
+  return {
+    message: error.message,
+    name: error.name,
+    code: error.code,
+    stack: error.stack
+  };
+};
