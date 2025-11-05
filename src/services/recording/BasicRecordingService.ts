@@ -2,7 +2,7 @@ import { VoiceReceiver, EndBehaviorType } from '@discordjs/voice';
 import { Transform } from 'stream';
 import OpusScript from 'opusscript';
 import { Guild } from 'discord.js';
-import { logger } from '../../utils/logger';
+import { logger, sanitizeAxiosError } from '../../utils/logger';
 import { multiTrackExporter, ExportedRecording } from '../processing/MultiTrackExporter';
 import { AudioProcessingOptions, audioProcessor } from '../processing/AudioProcessor';
 import { config } from '../../utils/config';
@@ -204,7 +204,7 @@ export class BasicRecordingService {
           logger.debug(`Deleted local file after upload: ${processedTrack.filePath}`);
 
         } catch (uploadError) {
-          logger.error(`Failed to upload segment ${segment.segmentIndex}, keeping local file`, uploadError);
+          logger.error(`Failed to upload segment ${segment.segmentIndex}, keeping local file`, sanitizeAxiosError(uploadError));
           // Keep the local file, will try batch upload at the end
         }
       } else {
@@ -212,7 +212,7 @@ export class BasicRecordingService {
       }
 
     } catch (error) {
-      logger.error(`Failed to write/upload segment ${segment.segmentIndex}`, error);
+      logger.error(`Failed to write/upload segment ${segment.segmentIndex}`, sanitizeAxiosError(error));
       throw error;
     }
   }
@@ -310,7 +310,7 @@ export class BasicRecordingService {
         logger.info(`✅ Live recording initialized successfully with ID: ${initResponse.recordingId}`);
       }
     } catch (error) {
-      logger.error(`❌ Failed to init live recording via API, continuing without streaming uploads`, error);
+      logger.error(`❌ Failed to init live recording via API, continuing without streaming uploads`, sanitizeAxiosError(error));
       logger.warn(`⚠️ Recording will use batch upload flow at the end (no live recording ID available)`);
       // Continue without streaming uploads - will fall back to batch upload at end
     }
@@ -551,7 +551,7 @@ export class BasicRecordingService {
                 logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
               })
               .catch((error) => {
-                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, error);
+                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, sanitizeAxiosError(error));
                 userRecording.completedSegments.push(segmentCopy);
               });
 
@@ -596,7 +596,7 @@ export class BasicRecordingService {
                 logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
               })
               .catch((error) => {
-                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, error);
+                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, sanitizeAxiosError(error));
                 // Add to completed segments for batch upload fallback
                 userRecording.completedSegments.push(segmentCopy);
               });
@@ -836,7 +836,7 @@ export class BasicRecordingService {
               await this.writeAndUploadSegment(session, currentSegment);
               logger.info(`Final segment ${currentSegment.segmentIndex} uploaded`);
             } catch (error) {
-              logger.error(`Failed to upload final segment ${currentSegment.segmentIndex}`, error);
+              logger.error(`Failed to upload final segment ${currentSegment.segmentIndex}`, sanitizeAxiosError(error));
               // Add to completed segments for fallback
               userRecording.completedSegments.push(currentSegment);
             }
@@ -934,7 +934,7 @@ export class BasicRecordingService {
         }
 
       } catch (error) {
-        logger.error(`Failed to finalize recording via API, falling back to batch export`, error);
+        logger.error(`Failed to finalize recording via API, falling back to batch export`, sanitizeAxiosError(error));
         // Fall through to batch export logic below
       }
     }

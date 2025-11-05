@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { apiClient } from '../api/client';
-import { logger } from '../../utils/logger';
+import { logger, sanitizeAxiosError } from '../../utils/logger';
 import { config } from '../../utils/config';
 import { ExportedRecording } from '../processing/MultiTrackExporter';
 import {
@@ -69,13 +69,6 @@ export class RecordingUploadService {
         const stats = await fs.promises.stat(track.filePath);
         const fileName = path.basename(track.filePath);
 
-        // Debug: log actual track structure
-        console.log('=== TRACK STRUCTURE ===');
-        console.log('Track:', JSON.stringify(track, null, 2));
-        console.log('Metadata keys:', Object.keys(track.metadata));
-        console.log('Track keys:', Object.keys(track));
-        console.log('=======================');
-
         segments.push({
           userId: track.metadata.userId,
           username: track.metadata.username,
@@ -127,7 +120,7 @@ export class RecordingUploadService {
 
       return response.data;
     } catch (error: any) {
-      logger.error(`Failed to initialize upload for session ${metadata.sessionId}`, error);
+      logger.error(`Failed to initialize upload for session ${metadata.sessionId}`, sanitizeAxiosError(error));
       throw error;
     }
   }
@@ -343,7 +336,7 @@ export class RecordingUploadService {
         throw helpfulError;
       }
 
-      logger.error(`Failed to complete upload for recording ${recordingId}`, error);
+      logger.error(`Failed to complete upload for recording ${recordingId}`, sanitizeAxiosError(error));
       throw error;
     }
   }
@@ -695,7 +688,7 @@ export class RecordingUploadService {
         return { found: false };
       }
 
-      logger.error(`Failed to check for active recording in channel ${channelId}`, error);
+      logger.error(`Failed to check for active recording in channel ${channelId}`, sanitizeAxiosError(error));
       // Don't throw - return not found on error
       return { found: false };
     }
@@ -760,7 +753,7 @@ export class RecordingUploadService {
       logger.info(`Live recording initialized with ID: ${result.recordingId}`);
       return result;
     } catch (error: any) {
-      logger.error(`Failed to init live recording for session ${sessionId}`, error);
+      logger.error(`Failed to init live recording for session ${sessionId}`, sanitizeAxiosError(error));
       throw error;
     }
   }
@@ -939,7 +932,7 @@ export class RecordingUploadService {
       logger.info(`Recording ${recordingId} finalized successfully`);
       return result;
     } catch (error: any) {
-      logger.error(`Failed to finalize recording ${recordingId}`, error);
+      logger.error(`Failed to finalize recording ${recordingId}`, sanitizeAxiosError(error));
       throw error;
     }
   }

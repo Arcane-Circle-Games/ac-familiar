@@ -2,7 +2,7 @@ import { VoiceChannel, GuildMember } from 'discord.js';
 import { VoiceConnectionManager } from '../voice/VoiceConnectionManager';
 import { BasicRecordingService } from './BasicRecordingService';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '../../utils/logger';
+import { logger, sanitizeAxiosError } from '../../utils/logger';
 import { ExportedRecording, multiTrackExporter } from '../processing/MultiTrackExporter';
 import { SessionTranscript } from '../../types/transcription';
 import { recordingUploadService, UploadResult } from '../upload/RecordingUploadService';
@@ -395,7 +395,7 @@ export class RecordingManager {
 
       return result;
     } catch (error) {
-      logger.error(`Upload error for session ${exportedRecording.sessionId}:`, error as Error);
+      logger.error(`Upload error for session ${exportedRecording.sessionId}:`, sanitizeAxiosError(error));
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown upload error',
