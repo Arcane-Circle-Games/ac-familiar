@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
+import { upload as blobUpload } from '@vercel/blob/client';
 import { apiClient } from '../api/client';
 import { logger, sanitizeAxiosError } from '../../utils/logger';
 import { config } from '../../utils/config';
@@ -172,33 +173,19 @@ export class RecordingUploadService {
           url: urlInfo.uploadUrl.substring(0, 50) + '...',
         });
 
-        // Upload DIRECTLY to Vercel Blob Storage (no API proxy)
-        const uploadResponse = await axios.put(urlInfo.uploadUrl, fileBuffer, {
-          headers: {
-            'Content-Type': 'audio/wav',
-          },
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
-          timeout: 300000, // 5 minutes
+        // Upload using Vercel Blob client upload (same as segment uploads)
+        // Note: For batch uploads, the API's init endpoint should also use handleUpload pattern
+        // Use the blobPath provided by the API as the destination pathname
+        const blob = await blobUpload(urlInfo.blobPath, fileBuffer, {
+          access: 'public',
+          handleUploadUrl: urlInfo.uploadUrl, // API provides handleUpload endpoint URL
         });
 
-        // Extract actual Vercel Blob URL from response
-        // Vercel Blob Storage returns the URL in the response, or we derive it from the signed URL
-        let blobUrl: string;
-        if (uploadResponse.data && (uploadResponse.data.url || uploadResponse.data.blobUrl)) {
-          blobUrl = uploadResponse.data.url || uploadResponse.data.blobUrl;
-          logger.debug(`Received blob URL from upload response`, {
-            fileIndex: urlInfo.fileIndex,
-            blobUrl: blobUrl.substring(0, 60) + '...',
-          });
-        } else {
-          // Standard approach: signed URL without query params is the permanent blob URL
-          blobUrl = urlInfo.uploadUrl.split('?')[0] || urlInfo.uploadUrl;
-          logger.debug(`Derived blob URL from signed URL`, {
-            fileIndex: urlInfo.fileIndex,
-            uploadUrl: urlInfo.uploadUrl.substring(0, 60) + '...',
-          });
-        }
+        const blobUrl = blob.url;
+        logger.debug(`Uploaded via Vercel Blob client upload`, {
+          fileIndex: urlInfo.fileIndex,
+          blobUrl: blobUrl.substring(0, 60) + '...',
+        });
 
         uploadedFiles.push({
           fileIndex: urlInfo.fileIndex,
@@ -746,9 +733,10 @@ export class RecordingUploadService {
    * Upload a single segment immediately after it completes
    *
    * Flow:
-   * 1. Request signed upload URL from API (Vercel Blob Storage URL)
-   * 2. Upload file DIRECTLY to Vercel Blob Storage (no API proxy)
-   * 3. Return blob URL
+   * 1. Upload file using Vercel Blob client upload (with handleUpload on API side)
+   * 2. API generates token via handleUpload endpoint
+   * 3. File uploads directly to Vercel Blob Storage
+   * 4. Return blob URL
    */
   async uploadSegmentImmediately(
     recordingId: string,
@@ -774,87 +762,44 @@ export class RecordingUploadService {
         recordingId,
       });
 
-      // Step 1: Request signed upload URL from API
-      const urlRequest: SegmentUploadUrlRequest = {
-        userId: metadata.userId,
-        username: metadata.username,
-        segmentIndex: metadata.segmentIndex,
-        fileName,
-        fileSize,
-        absoluteStartTime: metadata.absoluteStartTime,
-        absoluteEndTime: metadata.absoluteEndTime,
-        duration: metadata.duration,
-        format: metadata.format,
-      };
-
-      const urlResponse = await apiClient.post<{ success: boolean; data: SegmentUploadUrlResponse } | SegmentUploadUrlResponse>(
-        `/recordings/${recordingId}/segment-upload-url`,
-        urlRequest
-      );
-
-      if (!urlResponse.data) {
-        throw new Error('No upload URL in response');
-      }
-
-      // Handle both wrapped and unwrapped response formats
-      let urlData: SegmentUploadUrlResponse;
-      if ('data' in urlResponse.data && urlResponse.data.data) {
-        urlData = urlResponse.data.data;
-      } else if ('uploadUrl' in urlResponse.data) {
-        urlData = urlResponse.data as SegmentUploadUrlResponse;
-      } else {
-        logger.error('Unexpected segment-upload-url response structure', {
-          responseKeys: Object.keys(urlResponse.data)
-        });
-        throw new Error('Unexpected segment-upload-url response structure');
-      }
-
-      const { uploadUrl, blobPath } = urlData;
-
-      logger.debug(`Got signed upload URL for segment ${metadata.segmentIndex}`, {
-        blobPath,
-        uploadUrl: uploadUrl.substring(0, 50) + '...',
-      });
-
-      // Step 2: Upload file DIRECTLY to Vercel Blob Storage
+      // Read file into buffer for upload
       const fileBuffer = await fs.promises.readFile(segmentFilePath);
 
-      logger.debug(`Uploading directly to Vercel Blob Storage`, {
+      logger.debug(`Uploading to Vercel Blob via client upload`, {
         segmentIndex: metadata.segmentIndex,
         fileSize,
       });
 
-      const uploadResponse = await axios.put(uploadUrl, fileBuffer, {
-        headers: {
-          'Content-Type': 'audio/wav',
-        },
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-        timeout: 300000, // 5 minutes
+      // Build the blob path for the file (where it will be stored in Vercel Blob)
+      const blobPath = `recordings/${recordingId}/${metadata.username}/segment_${metadata.segmentIndex.toString().padStart(3, '0')}.wav`;
+
+      // Upload using Vercel Blob client upload
+      // The API endpoint should use handleUpload() to generate tokens
+      const blob = await blobUpload(blobPath, fileBuffer, {
+        access: 'public',
+        handleUploadUrl: `${config.PLATFORM_API_URL}/recordings/${recordingId}/segment-upload-url`,
+        clientPayload: JSON.stringify({
+          userId: metadata.userId,
+          username: metadata.username,
+          segmentIndex: metadata.segmentIndex,
+          fileName,
+          fileSize,
+          absoluteStartTime: metadata.absoluteStartTime,
+          absoluteEndTime: metadata.absoluteEndTime,
+          duration: metadata.duration,
+          format: metadata.format,
+        }),
       });
 
-      // Extract blob URL from response
-      // Vercel Blob Storage returns the URL in the response, or we can derive it from the signed URL
-      let blobUrl: string;
-      if (uploadResponse.data && (uploadResponse.data.url || uploadResponse.data.blobUrl)) {
-        blobUrl = uploadResponse.data.url || uploadResponse.data.blobUrl;
-        logger.debug(`Got blob URL from upload response`, {
-          segmentIndex: metadata.segmentIndex,
-        });
-      } else {
-        // Standard approach: signed URL without query params is the permanent blob URL
-        blobUrl = uploadUrl.split('?')[0] || uploadUrl;
-        logger.debug(`Derived blob URL from signed URL`, {
-          segmentIndex: metadata.segmentIndex,
-        });
-      }
-
       logger.info(`Segment ${metadata.segmentIndex} uploaded successfully`, {
-        blobUrl: blobUrl.substring(0, 50) + '...',
+        blobUrl: blob.url.substring(0, 50) + '...',
         fileSize,
       });
 
-      return { blobUrl, blobPath };
+      return {
+        blobUrl: blob.url,
+        blobPath: blob.pathname
+      };
     } catch (error: any) {
       // Sanitize error to avoid logging large buffers
       const sanitizedError = {
@@ -862,7 +807,6 @@ export class RecordingUploadService {
         code: error.code,
         status: error.response?.status,
         statusText: error.response?.statusText,
-        // Exclude config.data which contains the file buffer
         url: error.config?.url,
         method: error.config?.method
       };
