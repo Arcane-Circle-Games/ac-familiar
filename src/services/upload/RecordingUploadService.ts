@@ -175,7 +175,8 @@ export class RecordingUploadService {
 
         // Upload using Vercel Blob client upload (same as segment uploads)
         // Note: For batch uploads, the API's init endpoint should also use handleUpload pattern
-        const blob = await blobUpload(fileName, fileBuffer, {
+        // Use the blobPath provided by the API as the destination pathname
+        const blob = await blobUpload(urlInfo.blobPath, fileBuffer, {
           access: 'public',
           handleUploadUrl: urlInfo.uploadUrl, // API provides handleUpload endpoint URL
         });
@@ -769,12 +770,12 @@ export class RecordingUploadService {
         fileSize,
       });
 
-      // Build the blob path for the file
-      const blobPath = `recordings/${recordingId}/${metadata.userId}/segment_${metadata.segmentIndex.toString().padStart(3, '0')}.wav`;
+      // Build the blob path for the file (where it will be stored in Vercel Blob)
+      const blobPath = `recordings/${recordingId}/${metadata.username}/segment_${metadata.segmentIndex.toString().padStart(3, '0')}.wav`;
 
       // Upload using Vercel Blob client upload
       // The API endpoint should use handleUpload() to generate tokens
-      const blob = await blobUpload(fileName, fileBuffer, {
+      const blob = await blobUpload(blobPath, fileBuffer, {
         access: 'public',
         handleUploadUrl: `${config.PLATFORM_API_URL}/recordings/${recordingId}/segment-upload-url`,
         clientPayload: JSON.stringify({
