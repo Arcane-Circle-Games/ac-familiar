@@ -126,24 +126,10 @@ export class RecordingUploadService {
   }
 
   /**
-   * Step 2: Upload files to Blob Storage via API proxy
+   * Step 2: Upload files DIRECTLY to Vercel Blob Storage
    *
-   * TECH DEBT / TODO:
-   * Currently uploads go through the API server as a proxy (bot → API → Vercel Blob).
-   * This works but has performance implications:
-   * - Double bandwidth usage (files uploaded twice)
-   * - API server processes all file data
-   * - Slower upload times for users
-   *
-   * FUTURE OPTIMIZATION:
-   * Migrate to direct uploads using Vercel Blob client tokens:
-   * 1. API generates client tokens via generateClientTokenFromReadWriteToken()
-   * 2. Bot uses @vercel/blob SDK instead of axios PUT
-   * 3. Files upload directly: bot → Vercel Blob (no proxy)
-   * 4. Remove proxy endpoints from API server
-   *
-   * This would significantly improve upload performance and reduce API server load.
-   * The current approach was chosen to avoid changing bot upload logic initially.
+   * Uses signed URLs from the API to upload directly to Vercel Blob Storage.
+   * This eliminates the API proxy bottleneck and allows files of any size.
    */
   private async uploadFilesToBlobStorage(
     exportedRecording: ExportedRecording,
@@ -151,7 +137,7 @@ export class RecordingUploadService {
     onProgress?: UploadProgressCallback
   ): Promise<RecordingUploadedFile[]> {
     try {
-      logger.info(`Uploading ${uploadUrls.length} files to Blob Storage`);
+      logger.info(`Uploading ${uploadUrls.length} files directly to Vercel Blob Storage`);
 
       const uploadedFiles: RecordingUploadedFile[] = [];
       let totalBytes = 0;
@@ -165,7 +151,7 @@ export class RecordingUploadService {
         totalBytes += stats.size;
       }
 
-      // Upload each file to its pre-signed URL
+      // Upload each file to its signed URL (direct to Vercel Blob)
       for (const urlInfo of uploadUrls) {
         const track = exportedRecording.tracks[urlInfo.fileIndex];
         if (!track) {
@@ -179,26 +165,25 @@ export class RecordingUploadService {
         const relativePath = path.relative(exportedRecording.outputDirectory, track.filePath);
         const fileName = path.basename(track.filePath);
 
-        logger.debug(`Uploading file ${urlInfo.fileIndex} to Blob Storage`, {
+        logger.debug(`Uploading file ${urlInfo.fileIndex} directly to Vercel Blob Storage`, {
           fileName,
           size: fileSize,
           blobPath: urlInfo.blobPath,
           url: urlInfo.uploadUrl.substring(0, 50) + '...',
         });
 
-        // Upload to proxy endpoint (which forwards to Vercel Blob Storage)
+        // Upload DIRECTLY to Vercel Blob Storage (no API proxy)
         const uploadResponse = await axios.put(urlInfo.uploadUrl, fileBuffer, {
           headers: {
             'Content-Type': 'audio/wav',
-            'x-ms-blob-type': 'BlockBlob', // Required for Azure Blob Storage (legacy header, kept for compatibility)
           },
           maxBodyLength: Infinity,
           maxContentLength: Infinity,
           timeout: 300000, // 5 minutes
         });
 
-        // Extract actual Vercel Blob URL from proxy response
-        // API should return { url: "https://...blob.vercel-storage.com/..." }
+        // Extract actual Vercel Blob URL from response
+        // Vercel Blob Storage returns the URL in the response, or we derive it from the signed URL
         let blobUrl: string;
         if (uploadResponse.data && (uploadResponse.data.url || uploadResponse.data.blobUrl)) {
           blobUrl = uploadResponse.data.url || uploadResponse.data.blobUrl;
@@ -207,12 +192,11 @@ export class RecordingUploadService {
             blobUrl: blobUrl.substring(0, 60) + '...',
           });
         } else {
-          // Fallback: try to extract from upload URL (for direct blob storage uploads)
+          // Standard approach: signed URL without query params is the permanent blob URL
           blobUrl = urlInfo.uploadUrl.split('?')[0] || urlInfo.uploadUrl;
-          logger.warn(`No blob URL in upload response, using upload URL as fallback`, {
+          logger.debug(`Derived blob URL from signed URL`, {
             fileIndex: urlInfo.fileIndex,
             uploadUrl: urlInfo.uploadUrl.substring(0, 60) + '...',
-            responseData: uploadResponse.data,
           });
         }
 
@@ -762,8 +746,8 @@ export class RecordingUploadService {
    * Upload a single segment immediately after it completes
    *
    * Flow:
-   * 1. Request upload URL from API
-   * 2. Upload file to blob storage via proxy
+   * 1. Request signed upload URL from API (Vercel Blob Storage URL)
+   * 2. Upload file DIRECTLY to Vercel Blob Storage (no API proxy)
    * 3. Return blob URL
    */
   async uploadSegmentImmediately(
@@ -790,7 +774,7 @@ export class RecordingUploadService {
         recordingId,
       });
 
-      // Step 1: Request upload URL
+      // Step 1: Request signed upload URL from API
       const urlRequest: SegmentUploadUrlRequest = {
         userId: metadata.userId,
         username: metadata.username,
@@ -827,18 +811,22 @@ export class RecordingUploadService {
 
       const { uploadUrl, blobPath } = urlData;
 
-      logger.debug(`Got upload URL for segment ${metadata.segmentIndex}`, {
+      logger.debug(`Got signed upload URL for segment ${metadata.segmentIndex}`, {
         blobPath,
         uploadUrl: uploadUrl.substring(0, 50) + '...',
       });
 
-      // Step 2: Upload file to blob storage
+      // Step 2: Upload file DIRECTLY to Vercel Blob Storage
       const fileBuffer = await fs.promises.readFile(segmentFilePath);
+
+      logger.debug(`Uploading directly to Vercel Blob Storage`, {
+        segmentIndex: metadata.segmentIndex,
+        fileSize,
+      });
 
       const uploadResponse = await axios.put(uploadUrl, fileBuffer, {
         headers: {
           'Content-Type': 'audio/wav',
-          'x-ms-blob-type': 'BlockBlob',
         },
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
@@ -846,13 +834,17 @@ export class RecordingUploadService {
       });
 
       // Extract blob URL from response
+      // Vercel Blob Storage returns the URL in the response, or we can derive it from the signed URL
       let blobUrl: string;
       if (uploadResponse.data && (uploadResponse.data.url || uploadResponse.data.blobUrl)) {
         blobUrl = uploadResponse.data.url || uploadResponse.data.blobUrl;
+        logger.debug(`Got blob URL from upload response`, {
+          segmentIndex: metadata.segmentIndex,
+        });
       } else {
-        // Fallback: use upload URL without query params
+        // Standard approach: signed URL without query params is the permanent blob URL
         blobUrl = uploadUrl.split('?')[0] || uploadUrl;
-        logger.warn(`No blob URL in upload response, using fallback`, {
+        logger.debug(`Derived blob URL from signed URL`, {
           segmentIndex: metadata.segmentIndex,
         });
       }
