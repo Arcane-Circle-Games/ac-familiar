@@ -174,9 +174,18 @@ export class GameAnnouncementScheduler {
         throw new Error(`Channel ${channelId} is not a text channel`);
       }
 
-      await channel.send('# New Games Looking for Players');
+      // Build message with optional role ping
+      let message = '# New Games Looking for Players';
+      if (config.GAME_ANNOUNCEMENT_ROLE_ID) {
+        message = `<@&${config.GAME_ANNOUNCEMENT_ROLE_ID}>\n${message}`;
+      }
 
-      logDebug('GameAnnouncementScheduler: Sent header message', { channelId });
+      await channel.send(message);
+
+      logDebug('GameAnnouncementScheduler: Sent header message', {
+        channelId,
+        roleId: config.GAME_ANNOUNCEMENT_ROLE_ID || 'none'
+      });
     } catch (error) {
       logError('GameAnnouncementScheduler: Failed to send header message', error as Error, {
         channelId

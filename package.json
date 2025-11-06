@@ -14,6 +14,8 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write src/**/*.ts",
     "commands:clear": "node clear-commands.js",
+    "announce:latest": "tsx scripts/announce-latest-game.ts",
+    "announce:all": "tsx scripts/announce-all-open-games.ts",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"
   },
