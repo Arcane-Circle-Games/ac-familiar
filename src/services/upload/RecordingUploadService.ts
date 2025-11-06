@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import axios from 'axios';
 import { upload as blobUpload } from '@vercel/blob/client';
 import { apiClient } from '../api/client';
 import { logger, sanitizeAxiosError } from '../../utils/logger';
@@ -18,8 +17,6 @@ import {
   RecordingSegment,
   RecordingInitLiveRequest,
   RecordingInitLiveResponse,
-  SegmentUploadUrlRequest,
-  SegmentUploadUrlResponse,
   RecordingFinalizeRequest,
   RecordingFinalizeResponse,
   RecordingSegmentWithBlob,
