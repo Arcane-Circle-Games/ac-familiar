@@ -69,6 +69,7 @@
   },
   "optionalDependencies": {
     "@deepgram/sdk": "^3.0.0",
+    "@snazzah/davey": "^0.1.0",
     "bufferutil": "^4.0.8",
     "utf-8-validate": "^6.0.3"
   },
