@@ -765,14 +765,19 @@ export class RecordingUploadService {
       logger.debug(`Uploading to Vercel Blob via client upload`, {
         segmentIndex: metadata.segmentIndex,
         fileSize,
+        bufferLength: fileBuffer.length,
       });
 
       // Build the blob path for the file (where it will be stored in Vercel Blob)
       const blobPath = `recordings/${recordingId}/${metadata.username}/segment_${metadata.segmentIndex.toString().padStart(3, '0')}.wav`;
 
+      // Convert Buffer to Blob for upload
+      // The Vercel SDK expects a Blob/File object, not a raw Buffer
+      const blob = new Blob([fileBuffer], { type: 'audio/wav' });
+
       // Upload using Vercel Blob client upload
       // The API endpoint should use handleUpload() to generate tokens
-      const blob = await blobUpload(blobPath, fileBuffer, {
+      const uploadedBlob = await blobUpload(blobPath, blob, {
         access: 'public',
         handleUploadUrl: `${config.PLATFORM_API_URL}/recordings/${recordingId}/segment-upload-url`,
         clientPayload: JSON.stringify({
@@ -789,13 +794,13 @@ export class RecordingUploadService {
       });
 
       logger.info(`Segment ${metadata.segmentIndex} uploaded successfully`, {
-        blobUrl: blob.url.substring(0, 50) + '...',
+        blobUrl: uploadedBlob.url.substring(0, 50) + '...',
         fileSize,
       });
 
       return {
-        blobUrl: blob.url,
-        blobPath: blob.pathname
+        blobUrl: uploadedBlob.url,
+        blobPath: uploadedBlob.pathname
       };
     } catch (error: any) {
       // Sanitize error to avoid logging large buffers

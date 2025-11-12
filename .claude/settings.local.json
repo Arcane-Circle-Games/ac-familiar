@@ -40,7 +40,9 @@
       "Bash(railway run bash -c 'node -e \"\"const token = process.env.BLOB_READ_WRITE_TOKEN; console.log(\\\"\"Token exists:\\\"\", !!token); console.log(\\\"\"Token length:\\\"\", token?.length || 0);\"\"')",
       "Bash(railway run:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(railway logs:*)"
     ],
     "deny": [],
     "ask": []
