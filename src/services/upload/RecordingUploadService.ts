@@ -805,8 +805,23 @@ export class RecordingUploadService {
         status: error.response?.status,
         statusText: error.response?.statusText,
         url: error.config?.url,
-        method: error.config?.method
+        method: error.config?.method,
+        cause: error.cause?.message,
+        causeCode: error.cause?.code
       };
+
+      // Log full error for debugging
+      console.error('Full upload error:', JSON.stringify({
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        cause: error.cause ? {
+          message: error.cause.message,
+          code: error.cause.code,
+          errno: error.cause.errno,
+          syscall: error.cause.syscall
+        } : undefined
+      }, null, 2));
 
       logger.error(`Failed to upload segment ${metadata.segmentIndex}`, sanitizedError);
       throw error;

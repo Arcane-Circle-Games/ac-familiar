@@ -35,7 +35,12 @@
       "Bash(node merge-transcripts.js)",
       "WebFetch(domain:claude.ai)",
       "Bash(curl:*)",
-      "Read(//Users/mcarmody/Documents/ArcaneCircle/**)"
+      "Read(//Users/mcarmody/Documents/ArcaneCircle/**)",
+      "Bash(railway run bash -c \"node -e \"\"const token = process.env.BLOB_READ_WRITE_TOKEN; console.log(''Token exists:'', !!token); console.log(''Token length:'', token?.length || 0); console.log(''Token prefix:'', token?.substring(0, 15) || ''none'');\"\"\")",
+      "Bash(railway run bash -c 'node -e \"\"const token = process.env.BLOB_READ_WRITE_TOKEN; console.log(\\\"\"Token exists:\\\"\", !!token); console.log(\\\"\"Token length:\\\"\", token?.length || 0);\"\"')",
+      "Bash(railway run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
