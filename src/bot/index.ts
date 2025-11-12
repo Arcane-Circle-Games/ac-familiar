@@ -28,6 +28,7 @@ import { nextSessionCommand } from '../commands/next-session';
 import { profileCommand } from '../commands/profile';
 import { attendanceCommand } from '../commands/attendance';
 import { setGameChannelCommand } from '../commands/set-game-channel';
+import { recoverSegmentsCommand, recoverSegmentsCommandData } from '../commands/recover-segments';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -156,7 +157,8 @@ export class ArcaneBot {
       nextSessionCommand,
       profileCommand,
       attendanceCommand,
-      setGameChannelCommand
+      setGameChannelCommand,
+      recoverSegmentsCommand
     ];
 
     commands.forEach(command => {
@@ -177,6 +179,14 @@ export class ArcaneBot {
           return {
             ...commandData,
             dm_permission: true
+          };
+        }
+
+        if (command.name === 'recover-segments') {
+          const commandData = recoverSegmentsCommandData.toJSON();
+          return {
+            ...commandData,
+            dm_permission: false // Admin command, guild-only
           };
         }
 
