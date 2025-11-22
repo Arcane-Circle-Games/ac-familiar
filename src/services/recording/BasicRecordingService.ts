@@ -1,6 +1,6 @@
 import { VoiceReceiver, EndBehaviorType } from '@discordjs/voice';
 import { Transform } from 'stream';
-import OpusScript from 'opusscript';
+import { OpusEncoder } from '@discordjs/opus';
 import { Guild } from 'discord.js';
 import { logger, sanitizeAxiosError } from '../../utils/logger';
 import { multiTrackExporter, ExportedRecording } from '../processing/MultiTrackExporter';
@@ -51,10 +51,10 @@ interface SessionMetadata {
 }
 
 /**
- * Custom Opus decoder using OpusScript (pure JS, no native bindings)
+ * Custom Opus decoder using @discordjs/opus (native binding, more stable than opusscript)
  */
 class OpusDecoderStream extends Transform {
-  private decoder: OpusScript;
+  private decoder: OpusEncoder;
   private packetCount: number = 0;
   private totalInputBytes: number = 0;
   private totalOutputBytes: number = 0;
@@ -62,7 +62,8 @@ class OpusDecoderStream extends Transform {
   constructor() {
     super();
     // 48kHz, 2 channels (stereo)
-    this.decoder = new OpusScript(48000, 2);
+    // Note: OpusEncoder can also decode
+    this.decoder = new OpusEncoder(48000, 2);
   }
 
   override _transform(chunk: Buffer, _encoding: string, callback: Function): void {
@@ -70,26 +71,34 @@ class OpusDecoderStream extends Transform {
       this.packetCount++;
       this.totalInputBytes += chunk.length;
 
-      // Decode Opus packet to PCM (returns Int16Array)
+      // Decode Opus packet to PCM (returns Buffer)
       const pcm = this.decoder.decode(chunk);
       if (pcm && pcm.length > 0) {
-        // OpusScript returns Int16Array - convert to Buffer properly
-        // Use Buffer.from with the typed array directly, not the underlying buffer
-        const buffer = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-        this.totalOutputBytes += buffer.length;
+        this.totalOutputBytes += pcm.length;
 
         // Log every 50 packets to monitor decode quality
         if (this.packetCount % 50 === 0) {
-          logger.debug(`Opus decode stats: packets=${this.packetCount}, in=${this.totalInputBytes}B, out=${this.totalOutputBytes}B, pcmSamples=${pcm.length}`);
+          logger.debug(`Opus decode stats: packets=${this.packetCount}, in=${this.totalInputBytes}B, out=${this.totalOutputBytes}B, pcmBytes=${pcm.length}`);
         }
 
-        this.push(buffer);
+        this.push(pcm);
       }
       callback();
     } catch (error) {
       logger.error('Opus decode error:', error as Error);
       callback();
     }
+  }
+
+  // Clean up decoder resources
+  override destroy(error?: Error): this {
+    // Delete the decoder to allow WASM/native memory to be freed
+    if (this.decoder) {
+      // @ts-ignore - delete the decoder instance
+      delete this.decoder;
+      logger.debug(`OpusDecoderStream destroyed after ${this.packetCount} packets`);
+    }
+    return super.destroy(error || undefined);
   }
 }
 
@@ -369,6 +378,10 @@ export class BasicRecordingService {
       }
       if (userRecording.pcmStream) {
         userRecording.pcmStream.destroy();
+      }
+      // Explicitly destroy the decoder to free WASM/native memory
+      if (userRecording.decoder) {
+        userRecording.decoder.destroy();
       }
 
       const duration = userRecording.endTime - userRecording.startTime;
@@ -705,13 +718,16 @@ export class BasicRecordingService {
 
     const session = this.activeSessions.get(sessionId);
     if (session) {
-      // Destroy all user recording streams
+      // Destroy all user recording streams and decoders
       for (const userRecording of session.userRecordings.values()) {
         if (userRecording.opusStream) {
           userRecording.opusStream.destroy();
         }
         if (userRecording.pcmStream) {
           userRecording.pcmStream.destroy();
+        }
+        if (userRecording.decoder) {
+          userRecording.decoder.destroy();
         }
       }
     }
@@ -860,6 +876,10 @@ export class BasicRecordingService {
       }
       if (userRecording.pcmStream) {
         userRecording.pcmStream.destroy();
+      }
+      // Explicitly destroy the decoder to free WASM/native memory
+      if (userRecording.decoder) {
+        userRecording.decoder.destroy();
       }
 
       const duration = userRecording.endTime - userRecording.startTime;
