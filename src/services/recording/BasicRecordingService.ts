@@ -1,5 +1,6 @@
 import { VoiceReceiver, EndBehaviorType } from '@discordjs/voice';
 import { Transform } from 'stream';
+// @ts-ignore - @discordjs/opus has types but TypeScript doesn't always find them during build
 import { OpusEncoder } from '@discordjs/opus';
 import { Guild } from 'discord.js';
 import { logger, sanitizeAxiosError } from '../../utils/logger';
