@@ -73,35 +73,63 @@ Commands are registered in `src/bot/index.ts` in the `loadCommands()` method.
 
 **Special Case**: Commands with complex builders (like `game-info`) export both the command object and a `SlashCommandBuilder` instance (e.g., `gameInfoCommandData`).
 
-### Recording System Architecture
-**Voice Recording Flow**:
-1. **RecordingManager** (`src/services/recording/RecordingManager.ts`) - Orchestrates recording sessions
-2. **VoiceConnectionManager** (`src/services/voice/VoiceConnectionManager.ts`) - Manages Discord voice connections
-3. **BasicRecordingService** (`src/services/recording/BasicRecordingService.ts`) - Handles audio capture, processing, and storage
+### Recording System (Bot's Role)
+The bot records voice channel audio and uploads it to the platform. **Transcription is handled entirely by the platform API** after upload.
 
-**Key Features**:
-- Per-user audio stream capture from Discord voice channels
-- PCM audio conversion using @discordjs/opus
-- Silence-based segmentation (multi-track export)
-- Integration with platform API to store recordings and transcriptions
-- Session tracking with UUIDs
+**User Commands**:
+- `/record action:start [game] [session]` - Start recording current voice channel
+- `/record action:stop` - Stop recording and upload to platform
 
-**Upload Architecture** (`RecordingUploadService.ts`):
-- **Current Implementation (Tech Debt)**: Files upload via API proxy (bot → API → Vercel Blob)
-  - Three-step process: init → upload files → complete
-  - Bot sends files to API endpoints, API forwards to Vercel Blob Storage
-  - Performance cost: double bandwidth, API processes all file data
-- **Future Optimization**: Direct upload using Vercel Blob client tokens
-  - API generates client tokens, bot uses `@vercel/blob` SDK
-  - Direct path: bot → Vercel Blob (no proxy)
-  - Would eliminate bandwidth overhead and improve upload speeds
-  - See tech debt comments in `RecordingUploadService.ts:127-146` for migration plan
+**Architecture Components** (`src/services/`):
+- `RecordingManager` - Session orchestration, upload coordination
+- `BasicRecordingService` - Audio capture, segmentation, streaming uploads
+- `VoiceConnectionManager` - Discord voice connection lifecycle
+- `RecordingUploadService` - File uploads to Vercel Blob Storage
 
-**Transcription System**:
-Transcription is handled entirely by the platform API after audio upload:
-- Bot uploads audio files to Vercel Blob Storage via platform API
-- Platform handles transcription processing (WebAssembly or cloud-based)
-- No local transcription or queue management in the bot
+**Recording Flow**:
+
+1. **Start** (`/record start`):
+   - Bot joins voice channel via `@discordjs/voice`
+   - Creates session with UUID
+   - Initializes live recording via platform API → gets `recordingId`
+   - Subscribes to each user's Opus audio stream (continuous, per-user)
+
+2. **During Recording**:
+   - **Decode**: Opus packets → PCM audio (48kHz stereo) via `@discordjs/opus`
+   - **Segment**: Split audio on silence gaps (configurable threshold)
+   - **Stream Upload**: As each segment completes:
+     - Convert PCM buffers → WAV file (in `/tmp`)
+     - Upload to Vercel Blob via platform API
+     - Delete local file immediately
+   - **Memory Management**: Buffers freed after WAV conversion to prevent memory leaks
+
+3. **Stop** (`/record stop`):
+   - Finalize all active segments
+   - Upload any remaining segments
+   - Call platform API to finalize recording
+   - Bot leaves voice channel
+   - Returns URL to view/manage recording
+
+**Key Implementation Details**:
+- **Segmentation**: Configurable via `RECORDING_SILENCE_THRESHOLD` (default: 500ms gap)
+- **Min Segment Duration**: `RECORDING_MIN_SEGMENT_DURATION` (default: 500ms)
+- **Max Segment Size**: `RECORDING_MAX_SEGMENT_SIZE_MB` (forces split if exceeded)
+- **Upload Strategy**: Streaming (live) preferred, batch fallback if API unavailable
+- **Crash Recovery**: Bot detects orphaned recordings on startup and resumes them
+- **File Storage**: Temporary files in `/tmp/recordings/{sessionId}/` (deleted after upload)
+
+**Important Files**:
+- Commands: `src/commands/record.ts:91-386`
+- Session Logic: `src/services/recording/RecordingManager.ts:22-492`
+- Audio Processing: `src/services/recording/BasicRecordingService.ts:106-1051`
+- Upload: `src/services/upload/RecordingUploadService.ts`
+
+**Platform Integration**:
+Bot's responsibility ends at upload. The platform API handles:
+- Recording metadata storage (database)
+- Transcription processing (WebAssembly/cloud)
+- Playback URL generation
+- Recording management UI
 
 ### Game Announcement Scheduler
 The bot includes an automated system for announcing newly published games to a designated Discord channel.
