@@ -32,6 +32,7 @@ const configSchema = z.object({
   // Recording Configuration
   RECORDING_MAX_DURATION_MINUTES: z.coerce.number().min(1).max(300).default(120),
   RECORDING_AUDIO_QUALITY: z.enum(['low', 'medium', 'high']).default('high'),
+  RECORDING_OUTPUT_FORMAT: z.enum(['wav', 'flac', 'mp3']).default('flac'), // FLAC offers lossless compression
   RECORDING_AUTO_UPLOAD: z.coerce.boolean().default(false),
   RECORDING_KEEP_LOCAL_AFTER_UPLOAD: z.coerce.boolean().default(false),
 
@@ -39,10 +40,14 @@ const configSchema = z.object({
   AUDIO_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(10),
 
   // Segment-Based Recording Configuration
-  RECORDING_SILENCE_THRESHOLD: z.coerce.number().min(500).max(10000).default(2000), // ms
-  RECORDING_MIN_SEGMENT_DURATION: z.coerce.number().min(100).max(5000).default(500), // ms
+  RECORDING_SILENCE_THRESHOLD: z.coerce.number().min(500).max(10000).default(1500), // ms - reduced from 2000 for faster segmentation
+  RECORDING_MIN_SEGMENT_DURATION: z.coerce.number().min(100).max(5000).default(250), // ms - reduced from 500 to capture short utterances
   RECORDING_MAX_SEGMENT_SIZE_MB: z.coerce.number().min(1).max(50).default(10), // Max segment size in MB before force-finalize
   RECORDING_SEGMENT_PARALLEL_LIMIT: z.coerce.number().min(1).max(20).default(5),
+
+  // VAD (Voice Activity Detection) Configuration
+  RECORDING_VAD_RMS_THRESHOLD: z.coerce.number().min(100).max(2000).default(500), // RMS threshold for speech detection
+  RECORDING_VAD_SILENCE_CHUNKS: z.coerce.number().min(10).max(100).default(50), // ~1 second of silence at 20ms/chunk
   
   // Session Management
   SESSION_TIMEOUT_MINUTES: z.coerce.number().min(5).max(120).default(30),

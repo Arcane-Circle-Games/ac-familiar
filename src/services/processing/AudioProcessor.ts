@@ -204,24 +204,32 @@ export class AudioProcessor {
         ]);
 
       // Format-specific encoding options
+      // Quality settings: low, medium, high affect bitrates for lossy formats
+      const quality = config.RECORDING_AUDIO_QUALITY || 'high';
+      const mp3Bitrates: Record<string, string> = { low: '128k', medium: '192k', high: '320k' };
+      const flacCompressionLevels: Record<string, number> = { low: 5, medium: 6, high: 8 }; // Higher = better compression, slower
+
       switch (options.format) {
         case 'wav':
+          // WAV is always lossless PCM - quality setting doesn't affect it
           command = command
             .audioCodec('pcm_s16le')
             .format('wav');
           break;
 
         case 'flac':
+          // FLAC is lossless - compression level affects file size and encoding speed
           command = command
             .audioCodec('flac')
-            .audioQuality(8) // Highest quality
+            .audioQuality(flacCompressionLevels[quality] || 8)
             .format('flac');
           break;
 
         case 'mp3':
+          // MP3 is lossy - bitrate directly affects quality
           command = command
             .audioCodec('libmp3lame')
-            .audioBitrate(options.bitrate || '192k')
+            .audioBitrate(options.bitrate || mp3Bitrates[quality] || '192k')
             .format('mp3');
           break;
       }
@@ -366,6 +374,200 @@ export class AudioProcessor {
       default:
         return bufferSize;
     }
+  }
+
+  /**
+   * Convert PCM buffers to audio file using streaming FFmpeg (no temp file needed)
+   * This avoids the double-buffer memory spike from Buffer.concat()
+   */
+  async convertPCMToWAVStreaming(
+    pcmBuffers: Buffer[],
+    metadata: Omit<AudioTrackMetadata, 'duration'>,
+    options: AudioProcessingOptions = {}
+  ): Promise<ProcessedAudioTrack> {
+    const {
+      format = 'flac',
+      sampleRate = this.DEFAULT_SAMPLE_RATE,
+      outputDir = DEFAULT_RECORDINGS_DIR
+    } = options;
+
+    try {
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const duration = metadata.endTime - metadata.startTime;
+      const sanitizedUsername = this.sanitizeFilename(metadata.username);
+
+      let outputPath: string;
+      if (metadata.segmentIndex !== undefined) {
+        const userDir = path.join(outputDir, sanitizedUsername);
+        await fs.mkdir(userDir, { recursive: true });
+        const segmentFilename = `segment_${metadata.segmentIndex.toString().padStart(3, '0')}.${format}`;
+        outputPath = path.join(userDir, segmentFilename);
+      } else {
+        const date = new Date(options.sessionStartTime || metadata.startTime);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        const dateStr = `${month}-${day}-${year}`;
+        const sanitizedGuildName = options.guildName
+          ? this.sanitizeFilename(options.guildName)
+          : 'Discord';
+        const outputFilename = `${sanitizedGuildName}_${dateStr}_${sanitizedUsername}.${format}`;
+        outputPath = path.join(outputDir, outputFilename);
+      }
+
+      // Calculate total size without concat (just sum buffer sizes)
+      const totalSize = pcmBuffers.reduce((sum, buf) => sum + buf.length, 0);
+
+      logger.info('Processing audio track (streaming)', {
+        userId: metadata.userId,
+        username: metadata.username,
+        bufferCount: pcmBuffers.length,
+        totalSize,
+        duration,
+        format,
+        outputPath
+      });
+
+      // Stream PCM data directly to FFmpeg without temp file
+      await this.encodePCMToFormatStreaming(
+        pcmBuffers,
+        outputPath,
+        {
+          format,
+          sampleRate,
+          channels: this.DEFAULT_CHANNELS,
+          ...(options.bitrate && { bitrate: options.bitrate })
+        }
+      );
+
+      const stats = await fs.stat(outputPath);
+
+      const processedTrack: ProcessedAudioTrack = {
+        metadata: {
+          ...metadata,
+          duration,
+          sampleRate,
+          channels: this.DEFAULT_CHANNELS
+        },
+        filePath: outputPath,
+        fileSize: stats.size,
+        format
+      };
+
+      logger.info('Audio track processed successfully (streaming)', {
+        userId: metadata.userId,
+        outputPath,
+        fileSize: stats.size,
+        format
+      });
+
+      return processedTrack;
+
+    } catch (error) {
+      logger.error('Failed to process audio track (streaming)', error as Error, {
+        userId: metadata.userId,
+        username: metadata.username
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Stream PCM buffers directly to FFmpeg stdin using PassThrough stream
+   * This avoids the double-buffer memory spike from Buffer.concat()
+   */
+  private async encodePCMToFormatStreaming(
+    pcmBuffers: Buffer[],
+    outputPath: string,
+    options: {
+      format: 'wav' | 'flac' | 'mp3';
+      sampleRate: number;
+      channels: number;
+      bitrate?: string;
+    }
+  ): Promise<void> {
+    const { PassThrough } = require('stream');
+
+    return new Promise((resolve, reject) => {
+      // Quality settings
+      const quality = config.RECORDING_AUDIO_QUALITY || 'high';
+      const mp3Bitrates: Record<string, string> = { low: '128k', medium: '192k', high: '320k' };
+      const flacCompressionLevels: Record<string, number> = { low: 5, medium: 6, high: 8 };
+
+      // Create a PassThrough stream to pipe data to FFmpeg
+      const inputStream = new PassThrough();
+
+      // Create FFmpeg command with stream input
+      let command = ffmpeg()
+        .input(inputStream)
+        .inputFormat('s16le')
+        .inputOptions([
+          `-ar ${options.sampleRate}`,
+          `-ac ${options.channels}`
+        ]);
+
+      // Format-specific encoding options
+      switch (options.format) {
+        case 'wav':
+          command = command.audioCodec('pcm_s16le').format('wav');
+          break;
+        case 'flac':
+          command = command.audioCodec('flac').audioQuality(flacCompressionLevels[quality] || 8).format('flac');
+          break;
+        case 'mp3':
+          command = command.audioCodec('libmp3lame').audioBitrate(options.bitrate || mp3Bitrates[quality] || '192k').format('mp3');
+          break;
+      }
+
+      // Set output and events
+      command
+        .output(outputPath)
+        .on('start', (commandLine) => {
+          logger.debug('FFmpeg streaming encoding started', { commandLine });
+        })
+        .on('end', () => {
+          logger.debug('FFmpeg streaming encoding completed', { outputPath });
+          resolve();
+        })
+        .on('error', (error, stdout, stderr) => {
+          logger.error('FFmpeg streaming encoding error', error, {
+            outputPath,
+            stderr: stderr ? stderr.substring(0, 500) : 'no stderr'
+          });
+          reject(new Error(`FFmpeg streaming encoding failed: ${error.message}`));
+        })
+        .run();
+
+      // Write all PCM buffers to the input stream without concatenating first
+      // Use async iteration to handle backpressure properly
+      let bufferIndex = 0;
+
+      const writeNextBuffer = () => {
+        while (bufferIndex < pcmBuffers.length) {
+          const buffer = pcmBuffers[bufferIndex];
+          bufferIndex++;
+
+          // write() returns false if internal buffer is full
+          if (!inputStream.write(buffer)) {
+            // Wait for drain event before writing more
+            inputStream.once('drain', writeNextBuffer);
+            return;
+          }
+        }
+
+        // All buffers written, end the stream
+        inputStream.end();
+      };
+
+      inputStream.on('error', (err: Error) => {
+        logger.error('Input stream error', err);
+        reject(err);
+      });
+
+      // Start writing
+      writeNextBuffer();
+    });
   }
 
   /**
