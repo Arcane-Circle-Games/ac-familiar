@@ -30,11 +30,13 @@ interface UserRecording {
   endTime?: number;
   currentSegment: AudioSegment | null;
   completedSegments: AudioSegment[];
-  lastChunkTime: number; // Timestamp relative to session start (ms)
+  lastChunkTime: number; // Timestamp relative to session start (ms) - wall clock
+  lastAudioTime: number; // Audio time in ms based on decoded samples (more accurate)
   segmentCount: number;
   decoder: OpusDecoderStream;
   opusStream?: any; // AudioReceiveStream from Discord
   pcmStream?: any; // Decoded PCM stream
+  consecutiveSilentChunks: number; // Count of consecutive low-energy chunks for VAD
 }
 
 interface SessionMetadata {
@@ -55,10 +57,14 @@ interface SessionMetadata {
  * Custom Opus decoder using @discordjs/opus (native binding, more stable than opusscript)
  */
 class OpusDecoderStream extends Transform {
-  private decoder: OpusEncoder;
+  private decoder: OpusEncoder | null;
   private packetCount: number = 0;
   private totalInputBytes: number = 0;
   private totalOutputBytes: number = 0;
+  private decodeErrors: number = 0;
+  private lastSequenceNumber: number = -1;
+  private packetsOutOfOrder: number = 0;
+  private totalSamplesDecoded: number = 0; // Track audio samples for accurate timing
 
   constructor() {
     super();
@@ -68,6 +74,11 @@ class OpusDecoderStream extends Transform {
   }
 
   override _transform(chunk: Buffer, _encoding: string, callback: Function): void {
+    if (!this.decoder) {
+      callback();
+      return;
+    }
+
     try {
       this.packetCount++;
       this.totalInputBytes += chunk.length;
@@ -76,36 +87,124 @@ class OpusDecoderStream extends Transform {
       const pcm = this.decoder.decode(chunk);
       if (pcm && pcm.length > 0) {
         this.totalOutputBytes += pcm.length;
+        // PCM is 16-bit (2 bytes) stereo (2 channels), so samples = bytes / 4
+        this.totalSamplesDecoded += pcm.length / 4;
 
-        // Log every 50 packets to monitor decode quality
-        if (this.packetCount % 50 === 0) {
-          logger.debug(`Opus decode stats: packets=${this.packetCount}, in=${this.totalInputBytes}B, out=${this.totalOutputBytes}B, pcmBytes=${pcm.length}`);
+        // Log every 250 packets (~5 seconds at 20ms/packet) to monitor decode quality
+        if (this.packetCount % 250 === 0) {
+          const audioDurationSec = this.totalSamplesDecoded / 48000;
+          logger.debug(`Opus decode stats`, {
+            packets: this.packetCount,
+            inputBytes: this.totalInputBytes,
+            outputBytes: this.totalOutputBytes,
+            audioDuration: `${audioDurationSec.toFixed(1)}s`,
+            decodeErrors: this.decodeErrors,
+            outOfOrder: this.packetsOutOfOrder
+          });
         }
 
         this.push(pcm);
+      } else {
+        // Empty decode result - might indicate packet loss or corruption
+        this.decodeErrors++;
+        if (this.decodeErrors <= 10 || this.decodeErrors % 50 === 0) {
+          logger.warn(`Opus decode returned empty result`, {
+            packetNumber: this.packetCount,
+            totalErrors: this.decodeErrors,
+            inputSize: chunk.length
+          });
+        }
       }
       callback();
     } catch (error) {
-      logger.error('Opus decode error:', error as Error);
+      this.decodeErrors++;
+      // Only log first 10 errors and then every 50th to avoid log spam
+      if (this.decodeErrors <= 10 || this.decodeErrors % 50 === 0) {
+        logger.error('Opus decode error:', error as Error, {
+          packetNumber: this.packetCount,
+          totalErrors: this.decodeErrors
+        });
+      }
       callback();
     }
   }
 
+  /**
+   * Get total audio duration decoded in milliseconds
+   */
+  getAudioDurationMs(): number {
+    return (this.totalSamplesDecoded / 48000) * 1000;
+  }
+
+  /**
+   * Get decode statistics
+   */
+  getStats(): { packets: number; errors: number; outOfOrder: number; audioDurationMs: number } {
+    return {
+      packets: this.packetCount,
+      errors: this.decodeErrors,
+      outOfOrder: this.packetsOutOfOrder,
+      audioDurationMs: this.getAudioDurationMs()
+    };
+  }
+
   // Clean up decoder resources
   override destroy(error?: Error): this {
-    // Delete the decoder to allow WASM/native memory to be freed
     if (this.decoder) {
-      // @ts-ignore - delete the decoder instance
-      delete this.decoder;
-      logger.debug(`OpusDecoderStream destroyed after ${this.packetCount} packets`);
+      // Log final stats before cleanup
+      const stats = this.getStats();
+      logger.debug(`OpusDecoderStream destroyed`, {
+        packets: stats.packets,
+        decodeErrors: stats.errors,
+        audioDuration: `${(stats.audioDurationMs / 1000).toFixed(1)}s`
+      });
+
+      // Set to null to release reference and allow GC to clean up native memory
+      // The native binding will free Opus encoder state when GC runs
+      this.decoder = null;
     }
     return super.destroy(error || undefined);
   }
 }
 
+// VAD (Voice Activity Detection) - use config values with fallbacks
+const getVadRmsThreshold = () => config.RECORDING_VAD_RMS_THRESHOLD ?? 500;
+const getVadSilenceChunksThreshold = () => config.RECORDING_VAD_SILENCE_CHUNKS ?? 50;
+
 export class BasicRecordingService {
   private activeSessions: Map<string, SessionMetadata> = new Map();
   private lastMemoryLog: number = 0; // Track last memory log time
+
+  /**
+   * Calculate RMS (Root Mean Square) energy of PCM audio buffer
+   * Used for Voice Activity Detection (VAD)
+   * @param pcmBuffer - 16-bit signed little-endian stereo PCM buffer
+   * @returns RMS value (0-32767 range for 16-bit audio)
+   */
+  private calculateRMS(pcmBuffer: Buffer): number {
+    if (pcmBuffer.length < 4) return 0;
+
+    let sumSquares = 0;
+    const sampleCount = pcmBuffer.length / 2; // 16-bit = 2 bytes per sample
+
+    for (let i = 0; i < pcmBuffer.length; i += 2) {
+      // Read 16-bit signed sample (little-endian)
+      const sample = pcmBuffer.readInt16LE(i);
+      sumSquares += sample * sample;
+    }
+
+    return Math.sqrt(sumSquares / sampleCount);
+  }
+
+  /**
+   * Check if audio chunk contains speech using RMS-based VAD
+   * @param pcmBuffer - PCM audio buffer
+   * @returns true if speech detected, false if silence
+   */
+  private hasVoiceActivity(pcmBuffer: Buffer): boolean {
+    const rms = this.calculateRMS(pcmBuffer);
+    return rms > getVadRmsThreshold();
+  }
 
   /**
    * Write segment to disk, upload to cloud, and delete local file
@@ -130,17 +229,20 @@ export class BasicRecordingService {
       const userDir = path.join(session.outputDirectory, sanitizedUsername);
       await fs.mkdir(userDir, { recursive: true });
 
-      const segmentFileName = `segment_${segment.segmentIndex.toString().padStart(3, '0')}.wav`;
+      // Use configured output format (default: flac for better compression)
+      const outputFormat = config.RECORDING_OUTPUT_FORMAT || 'flac';
+      const segmentFileName = `segment_${segment.segmentIndex.toString().padStart(3, '0')}.${outputFormat}`;
       const tempFilePath = path.join(userDir, segmentFileName);
 
       logger.debug(`Writing segment ${segment.segmentIndex} to disk`, {
         userId: segment.userId,
         username: segment.username,
         chunks: segment.bufferChunks.length,
+        format: outputFormat,
         tempFilePath
       });
 
-      // Use audioProcessor to convert PCM to WAV
+      // Use audioProcessor to convert PCM to configured format
       const processedTrack = await audioProcessor.convertPCMToWAV(
         segment.bufferChunks,
         {
@@ -153,7 +255,7 @@ export class BasicRecordingService {
           segmentIndex: segment.segmentIndex
         },
         {
-          format: 'wav',
+          format: outputFormat,
           outputDir: userDir,
           guildName: session.guildName,
           sessionStartTime: session.startTime
@@ -184,7 +286,7 @@ export class BasicRecordingService {
               absoluteStartTime: segment.absoluteStartTime,
               absoluteEndTime: segment.absoluteEndTime,
               duration: segment.duration,
-              format: 'wav'
+              format: outputFormat
             }
           );
 
@@ -198,7 +300,7 @@ export class BasicRecordingService {
             absoluteEndTime: segment.absoluteEndTime,
             duration: segment.duration,
             fileSize: processedTrack.fileSize,
-            format: 'wav',
+            format: outputFormat,
             blobUrl,
             filePath: `${sanitizedUsername}/${segmentFileName}`
           };
@@ -224,6 +326,68 @@ export class BasicRecordingService {
     } catch (error) {
       logger.error(`Failed to write/upload segment ${segment.segmentIndex}`, sanitizeAxiosError(error));
       throw error;
+    }
+  }
+
+  /**
+   * Write a failed upload segment to disk to prevent memory buildup
+   * These files will be picked up by batch upload at session end
+   */
+  private async writeFailedSegmentToDisk(
+    session: SessionMetadata,
+    segment: AudioSegment
+  ): Promise<void> {
+    if (!segment.bufferChunks || segment.bufferChunks.length === 0) {
+      return;
+    }
+
+    try {
+      const sanitizedUsername = this.sanitizeFilename(segment.username);
+      const userDir = path.join(session.outputDirectory, sanitizedUsername);
+      await fs.mkdir(userDir, { recursive: true });
+
+      const outputFormat = config.RECORDING_OUTPUT_FORMAT || 'flac';
+      const segmentFileName = `segment_${segment.segmentIndex.toString().padStart(3, '0')}.${outputFormat}`;
+      const tempFilePath = path.join(userDir, segmentFileName);
+
+      logger.info(`Writing failed upload segment ${segment.segmentIndex} to disk for later retry`, {
+        userId: segment.userId,
+        username: segment.username,
+        chunks: segment.bufferChunks.length,
+        format: outputFormat,
+        tempFilePath
+      });
+
+      // Use audioProcessor to convert PCM to configured format
+      await audioProcessor.convertPCMToWAV(
+        segment.bufferChunks,
+        {
+          userId: segment.userId,
+          username: segment.username,
+          startTime: segment.absoluteStartTime,
+          endTime: segment.absoluteEndTime!,
+          sampleRate: 48000,
+          channels: 2,
+          segmentIndex: segment.segmentIndex
+        },
+        {
+          format: outputFormat,
+          outputDir: userDir,
+          guildName: session.guildName,
+          sessionStartTime: session.startTime
+        }
+      );
+
+      // Clear buffer memory after writing to disk
+      const freedMB = segment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0) / 1024 / 1024;
+      segment.bufferChunks = [];
+
+      logger.info(`Failed upload segment ${segment.segmentIndex} written to disk, freed ${Math.round(freedMB * 100) / 100}MB`);
+
+    } catch (error) {
+      logger.error(`Failed to write segment ${segment.segmentIndex} to disk`, sanitizeAxiosError(error));
+      // Last resort: just clear the buffers to prevent memory leak
+      segment.bufferChunks = [];
     }
   }
 
@@ -479,8 +643,10 @@ export class BasicRecordingService {
         currentSegment: null,
         completedSegments: [],
         lastChunkTime: 0,
+        lastAudioTime: 0,
         segmentCount: 0,
-        decoder: new OpusDecoderStream()
+        decoder: new OpusDecoderStream(),
+        consecutiveSilentChunks: 0
       };
 
       // Subscribe to user's audio stream with MANUAL end behavior (continuous)
@@ -497,16 +663,28 @@ export class BasicRecordingService {
       userRecording.opusStream = opusStream;
       userRecording.pcmStream = pcmStream;
 
-      // Collect PCM audio data with segment detection
+      // Collect PCM audio data with VAD-based segment detection
       pcmStream.on('data', (chunk: Buffer) => {
-        const currentTime = Date.now() - session.startTime; // ms since session start
+        const currentTime = Date.now() - session.startTime; // ms since session start (wall clock)
+        const audioTimeMs = userRecording.decoder.getAudioDurationMs(); // More accurate audio-based time
         const silenceThreshold = config.RECORDING_SILENCE_THRESHOLD;
+
+        // Voice Activity Detection - check if this chunk contains speech
+        const hasVoice = this.hasVoiceActivity(chunk);
+
+        // Track consecutive silent chunks for VAD-based segmentation
+        if (hasVoice) {
+          userRecording.consecutiveSilentChunks = 0;
+        } else {
+          userRecording.consecutiveSilentChunks++;
+        }
 
         // Log memory usage periodically (every 30 seconds)
         const now = Date.now();
         if (now - this.lastMemoryLog > 30000) {
           const memUsage = process.memoryUsage();
           const sessionMemory = this.getSessionMemoryUsage(sessionId);
+          const decoderStats = userRecording.decoder.getStats();
           logger.info(`Memory usage update`, {
             sessionId,
             heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
@@ -514,27 +692,38 @@ export class BasicRecordingService {
             rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
             sessionBuffers: `${Math.round(sessionMemory / 1024 / 1024)}MB`,
             uploadedSegments: session.uploadedSegments.length,
-            activeUsers: session.userRecordings.size
+            activeUsers: session.userRecordings.size,
+            decodeErrors: decoderStats.errors
           });
           this.lastMemoryLog = now;
         }
 
         if (userRecording.currentSegment === null) {
-          // Start new segment (first speech or after silence)
-          userRecording.currentSegment = {
-            userId,
-            username: userRecording.username,
-            segmentIndex: userRecording.segmentCount,
-            bufferChunks: [chunk],
-            absoluteStartTime: Date.now()
-          };
-          userRecording.segmentCount++;
+          // Only start a new segment if voice is detected (skip pure silence)
+          if (hasVoice) {
+            userRecording.currentSegment = {
+              userId,
+              username: userRecording.username,
+              segmentIndex: userRecording.segmentCount,
+              bufferChunks: [chunk],
+              absoluteStartTime: Date.now()
+            };
+            userRecording.segmentCount++;
+            userRecording.consecutiveSilentChunks = 0;
 
-          logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
+            logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms (VAD triggered)`);
+          }
+          // If no voice detected and no current segment, skip this chunk (don't record silence)
         } else {
-          // Check if current segment exceeds maximum size
-          const currentBufferSize = userRecording.currentSegment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          // We have an active segment
+          const currentBufferSize = userRecording.currentSegment.bufferChunks.reduce((sum, c) => sum + c.length, 0);
           const maxSizeBytes = config.RECORDING_MAX_SEGMENT_SIZE_MB * 1024 * 1024;
+
+          // Determine if we should end the segment
+          // Use both time-based (wall clock gap) AND VAD-based (consecutive silent chunks) detection
+          const wallClockGap = currentTime - userRecording.lastChunkTime > silenceThreshold;
+          const vadSilence = userRecording.consecutiveSilentChunks >= getVadSilenceChunksThreshold();
+          const shouldEndSegment = wallClockGap || vadSilence;
 
           if (currentBufferSize >= maxSizeBytes) {
             // Force-finalize segment due to size limit
@@ -564,12 +753,14 @@ export class BasicRecordingService {
               .then(() => {
                 logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
               })
-              .catch((error) => {
+              .catch(async (error) => {
                 logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, sanitizeAxiosError(error));
-                userRecording.completedSegments.push(segmentCopy);
+                // Write failed segment to disk to prevent memory buildup
+                // The segment will be picked up by batch upload at session end
+                await this.writeFailedSegmentToDisk(session, segmentCopy);
               });
 
-            // Start new segment
+            // Start new segment with current chunk
             userRecording.currentSegment = {
               userId,
               username: userRecording.username,
@@ -580,65 +771,73 @@ export class BasicRecordingService {
             userRecording.segmentCount++;
 
             logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms (after size limit split)`);
-          } else if (currentTime - userRecording.lastChunkTime > silenceThreshold) {
-          // Gap detected - finalize current segment, upload it, and start new one
-          const prevSegment = userRecording.currentSegment;
-          prevSegment.absoluteEndTime = session.startTime + userRecording.lastChunkTime;
-          prevSegment.duration = prevSegment.absoluteEndTime - prevSegment.absoluteStartTime;
+          } else if (shouldEndSegment) {
+            // Silence detected (either by wall clock gap or VAD) - finalize current segment
+            const prevSegment = userRecording.currentSegment;
+            prevSegment.absoluteEndTime = session.startTime + userRecording.lastChunkTime;
+            prevSegment.duration = prevSegment.absoluteEndTime - prevSegment.absoluteStartTime;
 
-          // Only process segments that meet minimum duration requirement
-          if (prevSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
-            const bufferSizeMB = prevSegment.bufferChunks.reduce((sum, chunk) => sum + chunk.length, 0) / 1024 / 1024;
+            const triggerReason = wallClockGap ? 'wall-clock gap' : 'VAD silence';
 
-            logger.debug(
-              `Finalizing segment ${prevSegment.segmentIndex} for user ${userId}: ` +
-              `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}, size=${Math.round(bufferSizeMB)}MB`
-            );
+            // Only process segments that meet minimum duration requirement
+            if (prevSegment.duration >= config.RECORDING_MIN_SEGMENT_DURATION) {
+              const bufferSizeMB = prevSegment.bufferChunks.reduce((sum, c) => sum + c.length, 0) / 1024 / 1024;
 
-            // Move bufferChunks to segmentCopy (transfer ownership, no copying)
-            const segmentCopy = {
-              ...prevSegment,
-              bufferChunks: prevSegment.bufferChunks  // Transfer reference, not copy
-            };
+              logger.debug(
+                `Finalizing segment ${prevSegment.segmentIndex} for user ${userId}: ` +
+                `duration=${prevSegment.duration}ms, chunks=${prevSegment.bufferChunks.length}, ` +
+                `size=${Math.round(bufferSizeMB * 100) / 100}MB, trigger=${triggerReason}`
+              );
 
-            // Clear original reference immediately
-            prevSegment.bufferChunks = [];
+              // Move bufferChunks to segmentCopy (transfer ownership, no copying)
+              const segmentCopy = {
+                ...prevSegment,
+                bufferChunks: prevSegment.bufferChunks
+              };
 
-            // Write to disk and upload to cloud (async, don't wait)
-            this.writeAndUploadSegment(session, segmentCopy)
-              .then(() => {
-                logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
-              })
-              .catch((error) => {
-                logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, sanitizeAxiosError(error));
-                // Add to completed segments for batch upload fallback
-                userRecording.completedSegments.push(segmentCopy);
-              });
+              // Clear original reference immediately
+              prevSegment.bufferChunks = [];
+
+              // Write to disk and upload to cloud (async, don't wait)
+              this.writeAndUploadSegment(session, segmentCopy)
+                .then(() => {
+                  logger.debug(`Segment ${segmentCopy.segmentIndex} uploaded successfully (memory freed after WAV conversion)`);
+                })
+                .catch(async (error) => {
+                  logger.error(`Failed to upload segment ${segmentCopy.segmentIndex}`, sanitizeAxiosError(error));
+                  // Write failed segment to disk to prevent memory buildup
+                  await this.writeFailedSegmentToDisk(session, segmentCopy);
+                });
+            } else {
+              logger.debug(
+                `Discarded segment ${prevSegment.segmentIndex} for user ${userId}: ` +
+                `too short (${prevSegment.duration}ms < ${config.RECORDING_MIN_SEGMENT_DURATION}ms)`
+              );
+            }
+
+            // Clear current segment - new one will start when voice is detected again
+            userRecording.currentSegment = null;
+
+            // If current chunk has voice, immediately start a new segment
+            if (hasVoice) {
+              userRecording.currentSegment = {
+                userId,
+                username: userRecording.username,
+                segmentIndex: userRecording.segmentCount,
+                bufferChunks: [chunk],
+                absoluteStartTime: Date.now()
+              };
+              userRecording.segmentCount++;
+              logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms (after silence)`);
+            }
           } else {
-            logger.debug(
-              `Discarded segment ${prevSegment.segmentIndex} for user ${userId}: ` +
-              `too short (${prevSegment.duration}ms < ${config.RECORDING_MIN_SEGMENT_DURATION}ms)`
-            );
-          }
-
-          // Start new segment
-          userRecording.currentSegment = {
-            userId,
-            username: userRecording.username,
-            segmentIndex: userRecording.segmentCount,
-            bufferChunks: [chunk],
-            absoluteStartTime: Date.now()
-          };
-          userRecording.segmentCount++;
-
-          logger.debug(`Started segment ${userRecording.currentSegment.segmentIndex} for user ${userId} at ${currentTime}ms`);
-          } else {
-            // Continue current segment
+            // Continue current segment - add chunk
             userRecording.currentSegment.bufferChunks.push(chunk);
           }
         }
 
         userRecording.lastChunkTime = currentTime;
+        userRecording.lastAudioTime = audioTimeMs;
       });
 
       pcmStream.on('error', (error) => {

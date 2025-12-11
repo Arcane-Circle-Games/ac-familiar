@@ -170,10 +170,19 @@ export class RecordingUploadService {
           url: urlInfo.uploadUrl.substring(0, 50) + '...',
         });
 
+        // Determine content type based on file extension
+        const ext = path.extname(fileName).toLowerCase().slice(1);
+        const contentTypeMap: Record<string, string> = {
+          wav: 'audio/wav',
+          flac: 'audio/flac',
+          mp3: 'audio/mpeg'
+        };
+        const contentType = contentTypeMap[ext] || 'audio/wav';
+
         // Upload using Vercel Blob server-side SDK
         const blob = await put(urlInfo.blobPath, fileBuffer, {
           access: 'public',
-          contentType: 'audio/wav',
+          contentType,
           addRandomSuffix: false,
         });
 
@@ -768,12 +777,21 @@ export class RecordingUploadService {
       });
 
       // Build the blob path for the file (where it will be stored in Vercel Blob)
-      const blobPath = `recordings/${recordingId}/${metadata.username}/segment_${metadata.segmentIndex.toString().padStart(3, '0')}.wav`;
+      const fileExt = metadata.format || 'flac';
+      const blobPath = `recordings/${recordingId}/${metadata.username}/segment_${metadata.segmentIndex.toString().padStart(3, '0')}.${fileExt}`;
+
+      // Determine content type based on format
+      const contentTypeMap: Record<string, string> = {
+        wav: 'audio/wav',
+        flac: 'audio/flac',
+        mp3: 'audio/mpeg'
+      };
+      const contentType = contentTypeMap[fileExt] || 'audio/wav';
 
       // Upload using Vercel Blob server-side SDK (works in Node.js)
       const uploadedBlob = await put(blobPath, fileBuffer, {
         access: 'public',
-        contentType: 'audio/wav',
+        contentType,
         addRandomSuffix: false,
       });
 
