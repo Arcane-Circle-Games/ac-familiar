@@ -4,7 +4,7 @@
 FROM node:18-alpine AS builder
 
 # Install build dependencies for native modules
-RUN apk add --no-cache python3 make g++ cairo-dev jpeg-dev pango-dev giflib-dev
+RUN apk add --no-cache python3 make g++ cairo-dev jpeg-dev pango-dev giflib-dev opus-dev
 
 WORKDIR /app
 
@@ -30,7 +30,8 @@ RUN apk add --no-cache \
     pango \
     giflib \
     ffmpeg \
-    libsodium
+    libsodium \
+    opus
 
 WORKDIR /app
 
