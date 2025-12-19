@@ -530,7 +530,7 @@ export class AudioProcessor {
           logger.debug('FFmpeg streaming encoding completed', { outputPath });
           resolve();
         })
-        .on('error', (error, stdout, stderr) => {
+        .on('error', (error, _stdout, stderr) => {
           logger.error('FFmpeg streaming encoding error', error, {
             outputPath,
             stderr: stderr ? stderr.substring(0, 500) : 'no stderr'

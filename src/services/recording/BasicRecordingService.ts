@@ -62,8 +62,6 @@ class OpusDecoderStream extends Transform {
   private totalInputBytes: number = 0;
   private totalOutputBytes: number = 0;
   private decodeErrors: number = 0;
-  private lastSequenceNumber: number = -1;
-  private packetsOutOfOrder: number = 0;
   private totalSamplesDecoded: number = 0; // Track audio samples for accurate timing
 
   constructor() {
@@ -98,8 +96,7 @@ class OpusDecoderStream extends Transform {
             inputBytes: this.totalInputBytes,
             outputBytes: this.totalOutputBytes,
             audioDuration: `${audioDurationSec.toFixed(1)}s`,
-            decodeErrors: this.decodeErrors,
-            outOfOrder: this.packetsOutOfOrder
+            decodeErrors: this.decodeErrors
           });
         }
 
@@ -139,11 +136,10 @@ class OpusDecoderStream extends Transform {
   /**
    * Get decode statistics
    */
-  getStats(): { packets: number; errors: number; outOfOrder: number; audioDurationMs: number } {
+  getStats(): { packets: number; errors: number; audioDurationMs: number } {
     return {
       packets: this.packetCount,
       errors: this.decodeErrors,
-      outOfOrder: this.packetsOutOfOrder,
       audioDurationMs: this.getAudioDurationMs()
     };
   }
