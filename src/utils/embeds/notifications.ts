@@ -18,13 +18,19 @@ export function buildSessionReminderEmbed(webhook: SessionReminderWebhook): Embe
   const sessionNumber = metadata?.sessionNumber || 0;
   const gmName = metadata?.gmName || 'Unknown GM';
   const scheduledTime = metadata?.scheduledTime ? new Date(metadata.scheduledTime) : null;
+  const isValidTime = scheduledTime && !isNaN(scheduledTime.getTime());
+  const timestamp = isValidTime ? Math.floor(scheduledTime.getTime() / 1000) : null;
+
+  // Build description with localized timestamp instead of using pre-formatted message
+  // The webhook.notification.message may contain UTC time strings which won't localize
+  const description = timestamp
+    ? `Your session for **${gameTitle}** starts <t:${timestamp}:R>!`
+    : webhook.notification.message || `Your session for **${gameTitle}** starts soon!`;
 
   const embed = new EmbedBuilder()
     .setColor(0xFFD700) // Gold color for reminders
     .setTitle('⏰ Session Starting Soon!')
-    .setDescription(
-      webhook.notification.message || `Your session for **${gameTitle}** starts soon!`
-    )
+    .setDescription(description)
     .setFooter({ text: 'Arcane Circle • Session Reminder' })
     .setTimestamp();
 
@@ -59,8 +65,7 @@ export function buildSessionReminderEmbed(webhook: SessionReminderWebhook): Embe
   }
 
   // Add start time if available
-  if (scheduledTime && !isNaN(scheduledTime.getTime())) {
-    const timestamp = Math.floor(scheduledTime.getTime() / 1000);
+  if (timestamp) {
     fields.push({
       name: '🕐 Start Time',
       value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
