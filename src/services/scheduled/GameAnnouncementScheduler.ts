@@ -180,7 +180,12 @@ export class GameAnnouncementScheduler {
         message = `<@&${config.GAME_ANNOUNCEMENT_ROLE_ID}>\n${message}`;
       }
 
-      await channel.send(message);
+      await channel.send({
+        content: message,
+        allowedMentions: config.GAME_ANNOUNCEMENT_ROLE_ID
+          ? { roles: [config.GAME_ANNOUNCEMENT_ROLE_ID] }
+          : {}
+      });
 
       logDebug('GameAnnouncementScheduler: Sent header message', {
         channelId,
