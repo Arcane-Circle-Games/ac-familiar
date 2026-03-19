@@ -28,6 +28,11 @@ import { nextSessionCommand } from '../commands/next-session';
 import { profileCommand } from '../commands/profile';
 import { attendanceCommand } from '../commands/attendance';
 import { setGameChannelCommand } from '../commands/set-game-channel';
+import { rollCommand } from '../commands/roll';
+import { wikiCommand } from '../commands/wiki';
+import { characterCommand } from '../commands/character';
+import { initCommand } from '../commands/init';
+import { handleWikiLinks } from '../listeners/wikiLinks';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -36,9 +41,14 @@ export class ArcaneBot {
   constructor() {
     this.client = new ArcaneClient();
     this.rest = new REST({ version: '10' }).setToken(config.DISCORD_TOKEN);
-    
+
     this.setupInteractionHandlers();
+    this.setupMessageListeners();
     this.loadCommands();
+  }
+
+  private setupMessageListeners() {
+    this.client.on('messageCreate', handleWikiLinks);
   }
   
   private setupInteractionHandlers() {
@@ -156,7 +166,11 @@ export class ArcaneBot {
       nextSessionCommand,
       profileCommand,
       attendanceCommand,
-      setGameChannelCommand
+      setGameChannelCommand,
+      rollCommand,
+      wikiCommand,
+      characterCommand,
+      initCommand
     ];
 
     commands.forEach(command => {
@@ -180,8 +194,8 @@ export class ArcaneBot {
           };
         }
 
-        // Define which commands are guild-only (voice/recording commands)
-        const guildOnlyCommands = ['record'];
+        // Define which commands are guild-only (voice/recording commands, initiative tracker)
+        const guildOnlyCommands = ['record', 'init'];
 
         return {
           name: command.name,

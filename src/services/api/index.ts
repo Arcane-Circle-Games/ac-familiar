@@ -7,6 +7,7 @@ export { GMService, gmService } from './gms';
 export { RecordingService, recordingService } from './recordings';
 export { WikiService, wikiService } from './wiki';
 export { SessionService, sessionService } from './sessions';
+export { CharacterService, characterService } from './characters';
 
 import { apiClient } from './client';
 import { gameService } from './games';
@@ -17,6 +18,7 @@ import { gmService } from './gms';
 import { recordingService } from './recordings';
 import { wikiService } from './wiki';
 import { sessionService } from './sessions';
+import { characterService } from './characters';
 import { logInfo, logError } from '../../utils/logger';
 import { config } from '../../utils/config';
 
@@ -29,6 +31,7 @@ export class ArcaneCircleAPI {
   public recordings = recordingService;
   public wiki = wikiService;
   public sessions = sessionService;
+  public characters = characterService;
 
   constructor() {
     this.games = gameService;
@@ -39,6 +42,7 @@ export class ArcaneCircleAPI {
     this.recordings = recordingService;
     this.wiki = wikiService;
     this.sessions = sessionService;
+    this.characters = characterService;
   }
   
   // Get web URL for creating links to the platform

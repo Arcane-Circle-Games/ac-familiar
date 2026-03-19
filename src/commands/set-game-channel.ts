@@ -8,6 +8,7 @@ import {
 } from 'discord.js';
 import { Command } from '../bot/client';
 import { arcaneAPI } from '../services/api';
+import { channelContext } from '../services/context/ChannelContext';
 import { logError, logInfo } from '../utils/logger';
 
 /**
@@ -147,6 +148,9 @@ export const setGameChannelCommand: Command = {
         },
         interaction.user.id
       );
+
+      // Invalidate channel context cache for this channel
+      channelContext.invalidate(channel.id);
 
       // Fetch game details to post confirmation in the channel
       const game = await arcaneAPI.games.getGame(gameId);

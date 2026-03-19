@@ -13,7 +13,7 @@ import {
   ApiResponse,
   WikiPageType
 } from '../../types/api';
-import { logInfo, logError } from '../../utils/logger';
+import { logInfo, logError, logDebug } from '../../utils/logger';
 
 export class WikiService {
   /**
@@ -370,6 +370,104 @@ export class WikiService {
         discordUserId
       });
       throw error;
+    }
+  }
+
+  /**
+   * Search wiki pages
+   */
+  public async searchPages(
+    wikiId: string,
+    query: string,
+    discordUserId: string,
+    options?: {
+      pageType?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<{ pages: any[]; total: number }> {
+    try {
+      logInfo('Searching wiki pages', { wikiId, query, options, discordUserId });
+
+      const params: Record<string, string> = {
+        q: query,
+        discordUserId
+      };
+
+      if (options?.pageType) {
+        params['type'] = options.pageType;
+      }
+      if (options?.limit !== undefined) {
+        params['limit'] = options.limit.toString();
+      }
+      if (options?.offset !== undefined) {
+        params['offset'] = options.offset.toString();
+      }
+
+      const response = await apiClient.get<any>(`/wiki/${wikiId}/search`, params);
+
+      // API returns { pages: [...], total: N }
+      return {
+        pages: response.data?.pages || response.pages || [],
+        total: response.data?.total || response.total || 0
+      };
+    } catch (error) {
+      logError('Failed to search wiki pages', error as Error, { wikiId, query, discordUserId });
+      return { pages: [], total: 0 };
+    }
+  }
+
+  /**
+   * Search suggestions for autocomplete
+   */
+  public async searchSuggest(
+    wikiId: string,
+    query: string,
+    discordUserId: string,
+    limit: number = 25
+  ): Promise<any[]> {
+    try {
+      logDebug('Fetching wiki search suggestions', { wikiId, query, limit, discordUserId });
+
+      const params: Record<string, string> = {
+        q: query,
+        limit: limit.toString(),
+        discordUserId
+      };
+
+      const response = await apiClient.get<any>(`/wiki/${wikiId}/search/suggest`, params);
+
+      // API returns { suggestions: [...] }
+      return response.data?.suggestions || response.suggestions || [];
+    } catch (error) {
+      logError('Failed to fetch wiki search suggestions', error as Error, { wikiId, query, discordUserId });
+      return [];
+    }
+  }
+
+  /**
+   * Get recently viewed/edited pages
+   */
+  public async getRecentPages(
+    wikiId: string,
+    discordUserId: string,
+    limit: number = 10
+  ): Promise<any[]> {
+    try {
+      logInfo('Fetching recent wiki pages', { wikiId, limit, discordUserId });
+
+      const params: Record<string, string> = {
+        limit: limit.toString(),
+        discordUserId
+      };
+
+      const response = await apiClient.get<any>(`/wiki/${wikiId}/recent`, params);
+
+      // API returns { recentPages: [{ pageId, viewedAt, page: {...} }] }
+      return response.data?.recentPages || response.recentPages || [];
+    } catch (error) {
+      logError('Failed to fetch recent wiki pages', error as Error, { wikiId, discordUserId });
+      return [];
     }
   }
 }
