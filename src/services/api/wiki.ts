@@ -408,8 +408,8 @@ export class WikiService {
 
       // API returns { pages: [...], total: N }
       return {
-        pages: response.data?.pages || response.pages || [],
-        total: response.data?.total || response.total || 0
+        pages: response.data?.pages || (response as any).pages || [],
+        total: response.data?.total || (response as any).total || 0
       };
     } catch (error) {
       logError('Failed to search wiki pages', error as Error, { wikiId, query, discordUserId });
@@ -438,7 +438,7 @@ export class WikiService {
       const response = await apiClient.get<any>(`/wiki/${wikiId}/search/suggest`, params);
 
       // API returns { suggestions: [...] }
-      return response.data?.suggestions || response.suggestions || [];
+      return response.data?.suggestions || (response as any).suggestions || [];
     } catch (error) {
       logError('Failed to fetch wiki search suggestions', error as Error, { wikiId, query, discordUserId });
       return [];
@@ -464,7 +464,7 @@ export class WikiService {
       const response = await apiClient.get<any>(`/wiki/${wikiId}/recent`, params);
 
       // API returns { recentPages: [{ pageId, viewedAt, page: {...} }] }
-      return response.data?.recentPages || response.recentPages || [];
+      return response.data?.recentPages || (response as any).recentPages || [];
     } catch (error) {
       logError('Failed to fetch recent wiki pages', error as Error, { wikiId, discordUserId });
       return [];

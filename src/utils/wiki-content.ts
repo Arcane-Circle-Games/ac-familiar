@@ -67,7 +67,7 @@ export function filterWikiContent(
       // Check if this is a reveal-block
       if (tag.includes('data-type="reveal-block"')) {
         const revealMatch = tag.match(/data-reveal-players="([^"]*)"/);
-        const revealedTo = revealMatch ? revealMatch[1].split(',').map(id => id.trim()) : [];
+        const revealedTo = revealMatch && revealMatch[1] ? revealMatch[1].split(',').map(id => id.trim()) : [];
 
         if (!revealedTo.includes(platformUserId)) {
           // User not in reveal list - hide this block

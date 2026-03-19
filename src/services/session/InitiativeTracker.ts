@@ -93,7 +93,7 @@ class InitiativeTrackerService {
       throw new Error(`No combatant named "${name}" in the current encounter`);
     }
 
-    const [removed] = encounter.combatants.splice(idx, 1);
+    const removed = encounter.combatants.splice(idx, 1)[0]!;
 
     if (encounter.currentIndex >= encounter.combatants.length) {
       encounter.currentIndex = Math.max(0, encounter.combatants.length - 1);
@@ -124,7 +124,7 @@ class InitiativeTrackerService {
       encounter.round = 1;
     }
 
-    const combatant = encounter.combatants[encounter.currentIndex];
+    const combatant = encounter.combatants[encounter.currentIndex]!;
     return { combatant, round: encounter.round };
   }
 
@@ -143,7 +143,7 @@ class InitiativeTrackerService {
       encounter.round = Math.max(1, encounter.round - 1);
     }
 
-    const combatant = encounter.combatants[encounter.currentIndex];
+    const combatant = encounter.combatants[encounter.currentIndex]!;
     return { combatant, round: encounter.round };
   }
 

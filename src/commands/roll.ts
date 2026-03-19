@@ -138,20 +138,20 @@ async function tryCharacterRoll(
   const { character, vttData } = characterData;
 
   // Extract ability/skill and advantage/disadvantage
-  let abilityOrSkill: string;
-  let rollType: string;
+  let abilityOrSkill: string = '';
+  let rollType: string = '';
   let modifier: number | undefined;
 
   if (checkMatch) {
-    abilityOrSkill = checkMatch[1];
+    abilityOrSkill = checkMatch[1] ?? '';
     rollType = 'Ability Check';
     modifier = vttData.abilities[abilityOrSkill]?.mod;
   } else if (saveMatch) {
-    abilityOrSkill = saveMatch[1];
+    abilityOrSkill = saveMatch[1] ?? '';
     rollType = 'Saving Throw';
     modifier = vttData.saves[abilityOrSkill]?.mod;
   } else if (skillMatch) {
-    abilityOrSkill = skillMatch[1].trim();
+    abilityOrSkill = (skillMatch[1] ?? '').trim();
     rollType = 'Skill Check';
     modifier = vttData.skills[abilityOrSkill]?.mod;
   } else {
@@ -183,7 +183,7 @@ async function tryCharacterRoll(
   }
 
   // Roll the dice
-  const result = roller.roll(notation);
+  const result = roller.roll(notation) as { total: number; output: string };
   const rolls = extractRolls(result.output);
 
   return {
@@ -209,26 +209,26 @@ function parseStandardRoll(input: string): RollResult | null {
       notation = lower.replace(/\s*advantage\s*/g, '').trim();
       if (!notation.includes('2d20kh1')) {
         // Add advantage notation if not already present
-        const modMatch = notation.match(/([+-]\d+)$/);
-        const mod = modMatch ? modMatch[1] : '';
+        const advModMatch = notation.match(/([+-]\d+)$/);
+        const mod = advModMatch ? advModMatch[1] : '';
         notation = `2d20kh1${mod}`;
       }
     } else if (lower.includes('disadvantage')) {
       notation = lower.replace(/\s*disadvantage\s*/g, '').trim();
       if (!notation.includes('2d20kl1')) {
-        const modMatch = notation.match(/([+-]\d+)$/);
-        const mod = modMatch ? modMatch[1] : '';
+        const disModMatch = notation.match(/([+-]\d+)$/);
+        const mod = disModMatch ? disModMatch[1] : '';
         notation = `2d20kl1${mod}`;
       }
     }
 
     // Roll the dice
-    const result = roller.roll(notation);
+    const result = roller.roll(notation) as { total: number; output: string };
     const rolls = extractRolls(result.output);
 
     // Extract modifier from notation
     const modMatch = notation.match(/([+-]\d+)$/);
-    const modifier = modMatch ? parseInt(modMatch[1], 10) : 0;
+    const modifier = modMatch ? parseInt(modMatch[1]!, 10) : 0;
 
     return {
       notation,
@@ -248,7 +248,7 @@ function parseStandardRoll(input: string): RollResult | null {
 function extractRolls(output: string): number[] {
   // Output format: "[4, 2] + 3 = 9" or similar
   const match = output.match(/\[([^\]]+)\]/);
-  if (match) {
+  if (match && match[1]) {
     return match[1].split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
   }
   return [];

@@ -45,14 +45,15 @@ class ChannelContextService {
 
       // Find game with matching discordChannelId
       for (const booking of bookings) {
-        if (booking.game?.discordChannelId === channelId && booking.game?.wikiId) {
+        const game = booking.game as any;
+        if (game?.discordChannelId === channelId && game?.wikiId) {
           const context: CampaignContext = {
-            gameId: booking.game.id,
-            gameName: booking.game.title,
-            wikiId: booking.game.wikiId,
-            gmId: booking.game.gmId,
+            gameId: game.id,
+            gameName: game.title,
+            wikiId: game.wikiId,
+            gmId: game.gmId,
             discordChannelId: channelId,
-            discordServerId: booking.game.discordServerId || ''
+            discordServerId: game.discordServerId || ''
           };
 
           // Cache it

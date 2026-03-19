@@ -1,6 +1,5 @@
 import { apiClient } from './client';
 import { Character, VTTData } from '../../types/character';
-import { ApiResponse } from '../../types/api';
 import { logInfo, logError, logDebug } from '../../utils/logger';
 
 interface CharacterCacheEntry {
@@ -111,7 +110,7 @@ export class CharacterService {
       }
 
       // Use first approved character
-      characterId = approved[0].id;
+      characterId = approved[0]!.id;
 
       // Cache the resolution
       this.characterResolutionCache.set(charCacheKey, {
