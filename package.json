@@ -29,6 +29,7 @@
   "author": "Arcane Circle",
   "license": "MIT",
   "dependencies": {
+    "@dice-roller/rpg-dice-roller": "^5.5.1",
     "@discordjs/builders": "^1.13.0",
     "@discordjs/opus": "^0.10.0",
     "@discordjs/rest": "^2.6.0",

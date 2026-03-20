@@ -8,6 +8,7 @@ import {
 } from 'discord.js';
 import { Command } from '../bot/client';
 import { arcaneAPI } from '../services/api';
+import { channelContext } from '../services/context/ChannelContext';
 import { logError, logInfo } from '../utils/logger';
 
 /**
@@ -137,6 +138,10 @@ export const setGameChannelCommand: Command = {
         mode,
       });
 
+      // Fetch game before update to get the old channel ID (for cache invalidation)
+      const game = await arcaneAPI.games.getGame(gameId);
+      const oldChannelId = (game as any)?.discordChannelId as string | undefined;
+
       // Save configuration via API
       await arcaneAPI.games.setDiscordChannel(
         gameId,
@@ -148,8 +153,11 @@ export const setGameChannelCommand: Command = {
         interaction.user.id
       );
 
-      // Fetch game details to post confirmation in the channel
-      const game = await arcaneAPI.games.getGame(gameId);
+      // Invalidate channel context cache for both old and new channels
+      if (oldChannelId && oldChannelId !== channel.id) {
+        channelContext.invalidate(oldChannelId);
+      }
+      channelContext.invalidate(channel.id);
 
       // Fetch sessions for the game to find the next upcoming session
       const sessions = await arcaneAPI.sessions.getGameSessions(gameId);

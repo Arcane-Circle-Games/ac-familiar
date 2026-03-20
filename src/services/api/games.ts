@@ -32,6 +32,11 @@ export interface Game {
   createdAt: string;
   updatedAt: string;
 
+  // Discord integration
+  discordChannelId?: string;
+  discordServerId?: string;
+  notificationMode?: 'DM_ONLY' | 'CHANNEL_ONLY' | 'BOTH';
+
   // Additional properties used by game-info command
   gameImage?: string;
   startTime?: string;
