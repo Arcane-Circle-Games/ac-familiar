@@ -19,6 +19,7 @@ interface CacheEntry {
 class ChannelContextService {
   private cache = new Map<string, CacheEntry>();
   private readonly CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+  private readonly MAX_CACHE_SIZE = 1000; // LRU eviction threshold
 
   /**
    * Resolve campaign context from a channel ID
@@ -56,7 +57,8 @@ class ChannelContextService {
             discordServerId: game.discordServerId || ''
           };
 
-          // Cache it
+          // Cache it (with LRU eviction if needed)
+          this.evictIfNeeded();
           this.cache.set(channelId, {
             context,
             expiry: now + this.CACHE_TTL
@@ -145,6 +147,29 @@ class ChannelContextService {
   public invalidate(channelId: string): void {
     this.cache.delete(channelId);
     logInfo('Campaign context cache invalidated', { channelId });
+  }
+
+  /**
+   * Evict oldest entry if cache is at max size (LRU)
+   */
+  private evictIfNeeded(): void {
+    if (this.cache.size >= this.MAX_CACHE_SIZE) {
+      // Find oldest entry by expiry time
+      let oldestKey: string | null = null;
+      let oldestExpiry = Infinity;
+
+      this.cache.forEach((entry, key) => {
+        if (entry.expiry < oldestExpiry) {
+          oldestExpiry = entry.expiry;
+          oldestKey = key;
+        }
+      });
+
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        logDebug('LRU cache eviction', { evictedKey: oldestKey, cacheSize: this.cache.size });
+      }
+    }
   }
 
   /**

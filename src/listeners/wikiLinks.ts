@@ -45,6 +45,9 @@ export async function handleWikiLinks(message: Message): Promise<void> {
     const lastResponse = userCooldowns.get(message.author.id) ?? 0;
     if (Date.now() - lastResponse < USER_COOLDOWN_MS) return;
 
+    // Set cooldown immediately to prevent spam (even failed lookups count)
+    userCooldowns.set(message.author.id, Date.now());
+
     // Resolve campaign context (cache-only for message listener)
     const ctx = channelContext.resolveCampaignFromMessage(message);
     if (!ctx) return;
@@ -71,7 +74,6 @@ export async function handleWikiLinks(message: Message): Promise<void> {
 
     if (embeds.length > 0) {
       await message.reply({ embeds, allowedMentions: { repliedUser: false } });
-      userCooldowns.set(message.author.id, Date.now());
     }
   } catch (err) {
     // Silent failure — ambient feature should never throw errors into chat

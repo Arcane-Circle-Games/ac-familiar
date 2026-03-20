@@ -94,9 +94,10 @@ export class CharacterService {
 
     // Layer 1: Resolve character (cached)
     const charCacheKey = `${discordUserId}:${gameId}`;
-    let characterId = this.characterResolutionCache.get(charCacheKey)?.characterId;
+    const cached = this.characterResolutionCache.get(charCacheKey);
+    let characterId = cached?.characterId;
 
-    if (!characterId || now >= (this.characterResolutionCache.get(charCacheKey)?.expiry || 0)) {
+    if (!characterId || !cached || now >= cached.expiry) {
       // Cache miss or expired - fetch from API
       const chars = await this.listByGame(gameId, discordUserId);
 

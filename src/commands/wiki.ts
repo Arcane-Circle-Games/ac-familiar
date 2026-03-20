@@ -125,7 +125,7 @@ export const wikiCommand: Command = {
 
       switch (subcommand) {
         case 'search':
-          await handleSearch(interaction, ctx.wikiId);
+          await handleSearch(interaction, ctx.wikiId, ctx.gmId);
           break;
         case 'page':
           await handlePageView(interaction, ctx.wikiId, ctx.gmId);
@@ -140,7 +140,7 @@ export const wikiCommand: Command = {
           await handleTypedSearch(interaction, ctx.wikiId, ctx.gmId, 'item');
           break;
         case 'recent':
-          await handleRecent(interaction, ctx.wikiId);
+          await handleRecent(interaction, ctx.wikiId, ctx.gmId);
           break;
       }
     } catch (error) {
@@ -196,7 +196,8 @@ export const wikiCommand: Command = {
  */
 async function handleSearch(
   interaction: ChatInputCommandInteraction,
-  wikiId: string
+  wikiId: string,
+  gmId: string
 ): Promise<void> {
   const query = interaction.options.getString('query', true);
 
@@ -206,7 +207,13 @@ async function handleSearch(
     interaction.user.id
   );
 
-  if (results.pages.length === 0) {
+  // Defense-in-depth: filter by visibility (platform API should handle this, but check client-side)
+  const isGM = await checkIsGM(interaction.user.id, gmId);
+  const visiblePages = results.pages.filter((page: any) =>
+    canUserSeePage(page.visibility || 'players', isGM)
+  );
+
+  if (visiblePages.length === 0) {
     await interaction.editReply({
       embeds: [new EmbedBuilder()
         .setColor(0xFFAA00)
@@ -217,7 +224,7 @@ async function handleSearch(
     return;
   }
 
-  const pages = results.pages;
+  const pages = visiblePages;
   let currentPage = 0;
   const totalPages = Math.ceil(pages.length / RESULTS_PER_PAGE);
 
@@ -369,7 +376,13 @@ async function handleTypedSearch(
     { pageType }
   );
 
-  if (results.pages.length === 0) {
+  // Defense-in-depth: filter by visibility
+  const isGM = await checkIsGM(interaction.user.id, gmId);
+  const visiblePages = results.pages.filter((page: any) =>
+    canUserSeePage(page.visibility || 'players', isGM)
+  );
+
+  if (visiblePages.length === 0) {
     await interaction.editReply({
       embeds: [new EmbedBuilder()
         .setColor(0xFFAA00)
@@ -381,8 +394,8 @@ async function handleTypedSearch(
   }
 
   // If exactly one result, show full page
-  if (results.pages.length === 1) {
-    const fullPage = await wikiService.getPage(wikiId, results.pages[0].id);
+  if (visiblePages.length === 1) {
+    const fullPage = await wikiService.getPage(wikiId, visiblePages[0].id);
     if (fullPage) {
       await sendPageEmbed(interaction, wikiId, gmId, fullPage);
       return;
@@ -393,10 +406,10 @@ async function handleTypedSearch(
   const embed = new EmbedBuilder()
     .setColor(0x3498db)
     .setTitle(`📖 ${capitalize(pageType)} Search: "${nameOrId}"`)
-    .setDescription(`Found ${results.pages.length} results`)
+    .setDescription(`Found ${visiblePages.length} results`)
     .setFooter({ text: 'Arcane Circle' });
 
-  const displayed = results.pages.slice(0, RESULTS_PER_PAGE);
+  const displayed = visiblePages.slice(0, RESULTS_PER_PAGE);
   for (const result of displayed) {
     const emoji = PAGE_TYPE_EMOJI[result.pageType] || '📖';
     const tags = result.tags?.length > 0
@@ -420,7 +433,8 @@ async function handleTypedSearch(
  */
 async function handleRecent(
   interaction: ChatInputCommandInteraction,
-  wikiId: string
+  wikiId: string,
+  gmId: string
 ): Promise<void> {
   const recentPages = await wikiService.getRecentPages(
     wikiId,
@@ -428,7 +442,14 @@ async function handleRecent(
     10
   );
 
-  if (!recentPages || recentPages.length === 0) {
+  // Defense-in-depth: filter by visibility
+  const isGM = await checkIsGM(interaction.user.id, gmId);
+  const visiblePages = recentPages?.filter((entry: any) => {
+    const page = entry.page || entry;
+    return canUserSeePage(page.visibility || 'players', isGM);
+  }) || [];
+
+  if (visiblePages.length === 0) {
     await interaction.editReply({
       embeds: [new EmbedBuilder()
         .setColor(0xFFAA00)
@@ -445,7 +466,7 @@ async function handleRecent(
     .setFooter({ text: 'Arcane Circle' });
 
   let description = '';
-  for (const entry of recentPages) {
+  for (const entry of visiblePages) {
     const page = entry.page || entry;
     const title = page.title || 'Untitled';
     const pType = page.pageType || 'page';
@@ -475,15 +496,38 @@ async function sendPageEmbed(
   try {
     const user = await arcaneAPI.getUserByDiscordId(interaction.user.id);
     if (user) platformUserId = user.id;
-  } catch {
-    // Proceed without filtering
+  } catch (error) {
+    logError('Failed to get platform user for wiki filtering', error as Error, { discordId: interaction.user.id });
+  }
+
+  // Validate platformUserId before filtering
+  if (!platformUserId || platformUserId.trim() === '') {
+    if (!isGM) {
+      // Non-GM without valid platform user ID - fail closed
+      logError('No valid platform user ID for non-GM wiki access - suppressing content', new Error('Missing platform user ID'), { discordId: interaction.user.id });
+      await interaction.editReply({
+        embeds: [new EmbedBuilder()
+          .setColor(0xFF0000)
+          .setTitle('❌ Account Not Linked')
+          .setDescription('You must link your Discord account to view wiki pages. Use `/link` to connect your account.')
+        ]
+      });
+      return;
+    }
+    // GMs can proceed without user ID (they see all content)
   }
 
   let content = page.content || '';
-  if (content && platformUserId) {
-    content = filterWikiContent(content, platformUserId, isGM);
+  try {
+    if (content && platformUserId) {
+      content = filterWikiContent(content, platformUserId, isGM);
+    }
+    content = stripHtmlToPlain(content);
+  } catch (error) {
+    // Fail closed on any filtering error
+    logError('Wiki content filtering failed - suppressing content', error as Error);
+    content = '';
   }
-  content = stripHtmlToPlain(content);
   content = truncate(content, 500);
 
   const title = page.title || 'Unknown Page';
@@ -515,6 +559,25 @@ async function sendPageEmbed(
 }
 
 // ── Helpers ────────────────────────────────────────────────
+
+/**
+ * Defense-in-depth visibility check
+ * Platform API should enforce this, but we check client-side as a safety net
+ */
+function canUserSeePage(visibility: string, isGM: boolean): boolean {
+  switch (visibility) {
+    case 'public':
+      return true;
+    case 'players':
+      return true; // User is authenticated (they have a platform account)
+    case 'gm_only':
+      return isGM;
+    case 'private':
+      return false;
+    default:
+      return false; // Unknown visibility - fail closed
+  }
+}
 
 function getPageUrl(wikiId: string, slug: string): string {
   return `${config.PLATFORM_WEB_URL}/dashboard/wikis/${wikiId}#${slug}`;
