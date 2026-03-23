@@ -544,6 +544,11 @@ export class WebhookListener {
    * Handle game published notification
    */
   private async handleGamePublished(payload: GamePublishedWebhook): Promise<void> {
+    if (!config.GAME_ANNOUNCEMENT_ENABLED) {
+      logger.debug('Game announcement disabled, skipping webhook-triggered post');
+      return;
+    }
+
     logger.info('Processing game published notification', {
       gameId: payload.gameId,
       gameTitle: payload.game.title,
@@ -567,11 +572,18 @@ export class WebhookListener {
       // Build the announcement embed
       const embed = buildGamePublishedEmbed(payload);
 
-      // Send the announcement to the channel
+      // Send the announcement with optional role ping
       if ('send' in channel) {
+        const roleId = config.GAME_ANNOUNCEMENT_ROLE_ID;
+        let content = '# 🎮 New Game Available!';
+        if (roleId) {
+          content = `<@&${roleId}>\n${content}`;
+        }
+
         await channel.send({
-          content: '# 🎮 New Game Available!',
+          content,
           embeds: [embed],
+          ...(roleId ? { allowedMentions: { roles: [roleId] } } : {}),
         });
       }
 
