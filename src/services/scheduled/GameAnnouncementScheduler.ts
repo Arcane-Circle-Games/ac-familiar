@@ -1,5 +1,5 @@
 import * as cron from 'node-cron';
-import { EmbedBuilder, TextChannel } from 'discord.js';
+import { EmbedBuilder, TextChannel, MessageCreateOptions } from 'discord.js';
 import { ArcaneBot } from '../../bot';
 import { config } from '../../utils/config';
 import { logInfo, logError, logDebug } from '../../utils/logger';
@@ -41,6 +41,26 @@ export class GameAnnouncementScheduler {
         new Error('Missing channel ID')
       );
       return;
+    }
+
+    // Validate role ID if configured (fail-soft — log warning, don't block startup)
+    if (config.GAME_ANNOUNCEMENT_ROLE_ID) {
+      try {
+        const guild = this.bot.client.guilds.cache.first();
+        if (guild) {
+          const role = guild.roles.cache.get(config.GAME_ANNOUNCEMENT_ROLE_ID);
+          if (!role) {
+            logError(
+              `GameAnnouncementScheduler: GAME_ANNOUNCEMENT_ROLE_ID ${config.GAME_ANNOUNCEMENT_ROLE_ID} not found in guild`,
+              new Error('Role not found')
+            );
+          } else {
+            logInfo(`GameAnnouncementScheduler: Will ping role "${role.name}" (${role.id})`);
+          }
+        }
+      } catch (error) {
+        logError('GameAnnouncementScheduler: Failed to validate role', error as Error);
+      }
     }
 
     // Build cron schedule from interval hours (e.g., 3 hours = "0 */3 * * *")
@@ -174,13 +194,17 @@ export class GameAnnouncementScheduler {
         throw new Error(`Channel ${channelId} is not a text channel`);
       }
 
-      // Build message with optional role ping
+      // Build message with optional role ping and explicit allowedMentions
       let message = '# New Games Looking for Players';
       if (config.GAME_ANNOUNCEMENT_ROLE_ID) {
         message = `<@&${config.GAME_ANNOUNCEMENT_ROLE_ID}>\n${message}`;
       }
 
-      await channel.send(message);
+      const sendOptions: MessageCreateOptions = { content: message };
+      if (config.GAME_ANNOUNCEMENT_ROLE_ID) {
+        sendOptions.allowedMentions = { roles: [config.GAME_ANNOUNCEMENT_ROLE_ID] };
+      }
+      await channel.send(sendOptions);
 
       logDebug('GameAnnouncementScheduler: Sent header message', {
         channelId,
