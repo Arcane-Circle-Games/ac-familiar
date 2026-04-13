@@ -572,18 +572,15 @@ export class WebhookListener {
       // Build the announcement embed
       const embed = buildGamePublishedEmbed(payload);
 
-      // Send the announcement with optional role ping
+      // Send the announcement with role ping
       if ('send' in channel) {
-        const roleId = config.GAME_ANNOUNCEMENT_ROLE_ID;
-        let content = '# 🎮 New Game Available!';
-        if (roleId) {
-          content = `<@&${roleId}>\n${content}`;
-        }
+        const roleId = '1432416701114224742'; // LFG role ping
+        const content = `<@&${roleId}>\n# 🎮 New Game Available!`;
 
         await channel.send({
           content,
           embeds: [embed],
-          ...(roleId ? { allowedMentions: { roles: [roleId] } } : {}),
+          allowedMentions: { roles: [roleId] },
         });
       }
 
