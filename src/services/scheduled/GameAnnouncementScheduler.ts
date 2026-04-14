@@ -208,7 +208,7 @@ export class GameAnnouncementScheduler {
 
       logDebug('GameAnnouncementScheduler: Sent header message', {
         channelId,
-        roleId: config.GAME_ANNOUNCEMENT_ROLE_ID || 'none'
+        roleId: config.GAME_ANNOUNCEMENT_ROLE_ID
       });
     } catch (error) {
       logError('GameAnnouncementScheduler: Failed to send header message', error as Error, {
