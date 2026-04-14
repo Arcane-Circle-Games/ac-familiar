@@ -215,7 +215,7 @@ export class ArcaneBot {
         }
 
         // Define which commands are guild-only (voice/recording commands, initiative tracker)
-        const guildOnlyCommands = ['record', 'init'];
+        const guildOnlyCommands = ['record', 'init', 'ac-info'];
 
         return {
           name: command.name,
@@ -262,6 +262,14 @@ export class ArcaneBot {
       await new Promise<void>((resolve) => {
         this.client.once('ready', () => resolve());
       });
+
+      // Validate HOME_SERVER_ID
+      if (config.HOME_SERVER_ID) {
+        const homeGuild = this.client.guilds.cache.get(config.HOME_SERVER_ID);
+        if (!homeGuild) {
+          logError(`HOME_SERVER_ID ${config.HOME_SERVER_ID} not found in guild cache — external server scoping will not work correctly`);
+        }
+      }
 
       // Register slash commands
       await this.registerCommands();
