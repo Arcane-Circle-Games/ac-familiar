@@ -32,6 +32,7 @@ import { rollCommand } from '../commands/roll';
 import { wikiCommand } from '../commands/wiki';
 import { characterCommand } from '../commands/character';
 import { initCommand } from '../commands/init';
+import { acInfoCommand } from '../commands/ac-info';
 import { handleWikiLinks } from '../listeners/wikiLinks';
 
 export class ArcaneBot {
@@ -68,6 +69,24 @@ export class ArcaneBot {
             username: interaction.user.username,
             guildId: interaction.guildId
           });
+
+          // Check if command is being used in external guild server
+          const isExternalServer = config.HOME_SERVER_ID &&
+                                    interaction.guildId &&
+                                    interaction.guildId !== config.HOME_SERVER_ID;
+
+          if (isExternalServer) {
+            // Only allow ac-info command in external servers
+            const externalServerAllowlist = ['ac-info'];
+
+            if (!externalServerAllowlist.includes(interaction.commandName)) {
+              await interaction.reply({
+                content: `This command is only available in the Arcane Circle Discord server. [Join here](https://discord.gg/arcanecircle)`,
+                ephemeral: true
+              });
+              return;
+            }
+          }
 
           // Check if command is tier-exempt (link, ping)
           if (!isCommandTierExempt(interaction.commandName)) {
@@ -170,7 +189,8 @@ export class ArcaneBot {
       rollCommand,
       wikiCommand,
       characterCommand,
-      initCommand
+      initCommand,
+      acInfoCommand
     ];
 
     commands.forEach(command => {

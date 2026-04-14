@@ -125,7 +125,11 @@ export interface SessionCancelledWebhook extends BaseNotificationWebhook {
 export interface GamePublishedWebhook extends WebhookPayload {
   event: 'notification.game.published';
   gameId: string;
-  channelId: string; // Target announcement channel
+  channelId: string; // Target announcement channel (AC Discord global channel)
+  guildAnnouncement?: {
+    discordServerId: string;
+    discordChannelId: string;
+  };
   game: {
     id: string;
     title: string;
