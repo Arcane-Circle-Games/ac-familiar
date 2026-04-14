@@ -574,13 +574,16 @@ export class WebhookListener {
 
       // Send the announcement with role ping
       if ('send' in channel) {
-        const roleId = '1432416701114224742'; // LFG role ping
-        const content = `<@&${roleId}>\n# 🎮 New Game Available!`;
+        const content = config.GAME_ANNOUNCEMENT_ROLE_ID
+          ? `<@&${config.GAME_ANNOUNCEMENT_ROLE_ID}>\n# 🎮 New Game Available!`
+          : '# 🎮 New Game Available!';
 
         await channel.send({
           content,
           embeds: [embed],
-          allowedMentions: { roles: [roleId] },
+          ...(config.GAME_ANNOUNCEMENT_ROLE_ID && {
+            allowedMentions: { roles: [config.GAME_ANNOUNCEMENT_ROLE_ID] },
+          }),
         });
       }
 
@@ -589,6 +592,35 @@ export class WebhookListener {
         gameId: payload.gameId,
         gameTitle: payload.game.title,
       });
+
+      // Also post to guild announcement channel if configured
+      if (payload.guildAnnouncement?.discordChannelId) {
+        try {
+          const guildChannel = await this.bot.client.channels.fetch(
+            payload.guildAnnouncement.discordChannelId
+          );
+
+          if (guildChannel?.isTextBased() && 'send' in guildChannel) {
+            // Reuse same embed but without role ping for guild servers
+            await guildChannel.send({
+              content: '# 🎮 New Game Available!',
+              embeds: [embed],
+            });
+
+            logger.info('Guild announcement posted successfully', {
+              guildChannelId: payload.guildAnnouncement.discordChannelId,
+              guildServerId: payload.guildAnnouncement.discordServerId,
+              gameId: payload.gameId,
+            });
+          }
+        } catch (error) {
+          // Don't throw - guild channel failure shouldn't block AC channel post
+          logger.warn(
+            `Failed to post guild announcement to channel ${payload.guildAnnouncement.discordChannelId}`,
+            error as Error
+          );
+        }
+      }
     } catch (error) {
       logger.error('Failed to send game published notification', error as Error, {
         channelId: payload.channelId,
