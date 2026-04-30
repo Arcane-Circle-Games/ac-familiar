@@ -60,6 +60,66 @@ export class WebhookListener {
       res.json({ status: 'ok', service: 'webhook-listener' });
     });
 
+    // Stats endpoint (consumed by AC admin dashboard /api/admin/bot-status)
+    this.app.get('/stats', (req: Request, res: Response): any => {
+      // Auth: timing-safe X-Bot-API-Key header check
+      const providedKey = req.headers['x-bot-api-key'];
+      if (typeof providedKey !== 'string' || !providedKey) {
+        return res.status(401).json({ error: 'Missing X-Bot-API-Key' });
+      }
+
+      const expectedKey = config.BOT_API_KEY;
+      if (!expectedKey) {
+        logger.error('BOT_API_KEY not configured; refusing /stats');
+        return res.status(503).json({ error: 'Bot not configured' });
+      }
+
+      const providedBuf = Buffer.from(providedKey);
+      const expectedBuf = Buffer.from(expectedKey);
+      if (
+        providedBuf.length !== expectedBuf.length ||
+        !crypto.timingSafeEqual(providedBuf, expectedBuf)
+      ) {
+        return res.status(401).json({ error: 'Invalid API key' });
+      }
+
+      if (!this.bot) {
+        // Bot instance not yet attached — listener started before login.
+        return res.status(503).json({ status: 'offline', error: 'Bot not initialized' });
+      }
+
+      const client = this.bot.client;
+      const ready = client.isReady();
+
+      try {
+        const guilds = client.guilds.cache.map((g) => ({
+          id: g.id,
+          name: g.name,
+          memberCount: g.memberCount,
+          joinedAt: g.joinedAt ? g.joinedAt.toISOString() : new Date(0).toISOString(),
+        }));
+
+        const commands = client.commands.map((_c, name) => name);
+
+        const payload = {
+          status: ready ? 'online' : 'offline',
+          uptimeMs: client.uptime ?? 0,
+          readyAt: client.readyAt ? client.readyAt.toISOString() : new Date(0).toISOString(),
+          ping: client.ws.ping,
+          guildCount: client.guilds.cache.size,
+          guilds,
+          commandCount: client.commands.size,
+          commands,
+          cachedUsers: client.users.cache.size,
+        };
+
+        return res.json(payload);
+      } catch (error) {
+        logger.error('Error building /stats payload', error as Error);
+        return res.status(500).json({ error: 'Failed to build stats' });
+      }
+    });
+
     // Notification webhook handler
     this.app.post('/webhooks/notification', async (req: Request, res: Response): Promise<any> => {
       try {
