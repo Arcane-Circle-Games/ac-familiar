@@ -64,7 +64,13 @@ const configSchema = z.object({
   GAME_ANNOUNCEMENT_ENABLED: z.coerce.boolean().default(false),
   GAME_ANNOUNCEMENT_CHANNEL_ID: z.string().optional(),
   GAME_ANNOUNCEMENT_ROLE_ID: z.string().default('1432416701114224742'),
-  GAME_ANNOUNCEMENT_INTERVAL_HOURS: z.coerce.number().min(1).max(24).default(3)
+  GAME_ANNOUNCEMENT_INTERVAL_HOURS: z.coerce.number().min(1).max(24).default(3),
+
+  // Bug Report Configuration
+  // GitHub personal access token (or fine-grained token) with `issues: write` scope
+  // on the GITHUB_BUG_REPO. If unset, the /bug command will fail at submission time.
+  GITHUB_TOKEN: z.string().optional(),
+  GITHUB_BUG_REPO: z.string().default('Arcane-Circle-Games/ac-mvp')
 });
 
 const parseConfig = () => {

@@ -33,6 +33,11 @@ import { wikiCommand } from '../commands/wiki';
 import { characterCommand } from '../commands/character';
 import { initCommand } from '../commands/init';
 import { acInfoCommand } from '../commands/ac-info';
+import {
+  bugCommand,
+  BUG_REPORT_MODAL_ID,
+  handleBugReportSubmission
+} from '../commands/bug';
 import { handleWikiLinks } from '../listeners/wikiLinks';
 
 export class ArcaneBot {
@@ -149,6 +154,17 @@ export class ArcaneBot {
             logError('Failed to send error message to user', replyError as Error);
           }
         }
+      } else if (interaction.isModalSubmit()) {
+        if (interaction.customId === BUG_REPORT_MODAL_ID) {
+          try {
+            await handleBugReportSubmission(interaction);
+          } catch (error) {
+            logError('Error handling bug report modal submission', error as Error, {
+              userId: interaction.user.id,
+              guildId: interaction.guildId
+            });
+          }
+        }
       } else if (interaction.isAutocomplete()) {
         const command = this.client.getCommand(interaction.commandName);
 
@@ -190,7 +206,8 @@ export class ArcaneBot {
       wikiCommand,
       characterCommand,
       initCommand,
-      acInfoCommand
+      acInfoCommand,
+      bugCommand
     ];
 
     commands.forEach(command => {
