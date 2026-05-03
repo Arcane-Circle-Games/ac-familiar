@@ -632,16 +632,27 @@ export class WebhookListener {
       // Build the announcement embed
       const embed = buildGamePublishedEmbed(payload);
 
-      // Send the announcement with role ping
+      // Only attach the LFG role ping when the destination is the configured
+      // LFG channel. Platform PR #151 (ac-mvp) reuses this same event to fan
+      // out announcements to a paired guild's private Discord channel — that
+      // server has no LFG role, so prepending `<@&LFG_ROLE_ID>` there leaks
+      // an unresolved role mention as raw text. Match by channelId rather
+      // than introducing a new flag so the fix lands without a coordinated
+      // platform change.
+      const isLfgChannel =
+        !!config.GAME_ANNOUNCEMENT_CHANNEL_ID &&
+        payload.channelId === config.GAME_ANNOUNCEMENT_CHANNEL_ID;
+      const shouldPingRole = isLfgChannel && !!config.GAME_ANNOUNCEMENT_ROLE_ID;
+
       if ('send' in channel) {
-        const content = config.GAME_ANNOUNCEMENT_ROLE_ID
+        const content = shouldPingRole
           ? `<@&${config.GAME_ANNOUNCEMENT_ROLE_ID}>\n# 🎮 New Game Available!`
           : '# 🎮 New Game Available!';
 
         await channel.send({
           content,
           embeds: [embed],
-          ...(config.GAME_ANNOUNCEMENT_ROLE_ID && {
+          ...(shouldPingRole && {
             allowedMentions: { roles: [config.GAME_ANNOUNCEMENT_ROLE_ID] },
           }),
         });
