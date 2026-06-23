@@ -39,6 +39,7 @@ import {
   handleBugReportSubmission
 } from '../commands/bug';
 import { handleWikiLinks } from '../listeners/wikiLinks';
+import { handleForumReport } from '../listeners/forumReports';
 
 export class ArcaneBot {
   public client: ArcaneClient;
@@ -55,6 +56,8 @@ export class ArcaneBot {
 
   private setupMessageListeners() {
     this.client.on('messageCreate', handleWikiLinks);
+    // Forum posts in the configured report channels → GitHub issues.
+    this.client.on('threadCreate', handleForumReport);
   }
   
   private setupInteractionHandlers() {
