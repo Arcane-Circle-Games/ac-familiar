@@ -23,6 +23,13 @@ const NOTICED_REACTION = '⚙️';
 /** Forum tag (lowercased) that closes the linked GitHub issue when applied. */
 const COMPLETE_TAG = '100% complete';
 
+/**
+ * Thread id → filed issue number, populated when the listener files an issue.
+ * Lets closure find the issue without reading thread history (which needs Read
+ * Message History). Lost on restart — falls back to scanning the thread then.
+ */
+const filedIssues = new Map<string, number>();
+
 /** Forum tags (lowercased) that cause a post to be filed. */
 const TRIGGER_TAGS = new Set(['bug', 'request']);
 
@@ -122,6 +129,7 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
       .join('\n');
 
     const issue = await createBugIssue({ title, body, labels });
+    filedIssues.set(thread.id, issue.number);
 
     await thread.send(
       `Logged as **#${issue.number}** on GitHub — follow it here: ${issue.html_url}`
@@ -170,14 +178,18 @@ async function getCompleteTagId(thread: ThreadChannel): Promise<string | null> {
  * (e.g. a pre-listener post, or a non-Bug/Request post that was ignored).
  */
 async function findLinkedIssue(thread: ThreadChannel): Promise<number | null> {
+  const cached = filedIssues.get(thread.id);
+  if (cached) return cached;
   try {
     const msgs = await thread.messages.fetch({ limit: 50 });
     for (const m of msgs.values()) {
       const match = m.content.match(/\/issues\/(\d+)/);
       if (match && match[1]) return parseInt(match[1], 10);
     }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    logError('findLinkedIssue: could not read thread history', err as Error, {
+      thread: thread.id
+    });
   }
   return null;
 }
@@ -188,20 +200,26 @@ async function findLinkedIssue(thread: ThreadChannel): Promise<number | null> {
  * transition, finds the issue from the bot's own reply, and closes it if open.
  */
 export async function handleForumClosure(
-  oldThread: ThreadChannel,
+  _oldThread: ThreadChannel,
   newThread: ThreadChannel
 ): Promise<void> {
   if (!forumSource(newThread.parentId)) return;
 
   const completeId = await getCompleteTagId(newThread);
-  if (!completeId) return;
+  if (!completeId) {
+    logInfo('closure: no 100% Complete tag in forum', { thread: newThread.id });
+    return;
+  }
 
-  const nowComplete = (newThread.appliedTags ?? []).includes(completeId);
-  const wasComplete = (oldThread.appliedTags ?? []).includes(completeId);
-  if (!nowComplete || wasComplete) return; // only on the transition to complete
+  // Act whenever the post currently carries the tag — no fragile old/new diff.
+  // closeIssueIfOpen is idempotent, so re-fires on later updates are no-ops.
+  if (!(newThread.appliedTags ?? []).includes(completeId)) return;
 
   const issueNumber = await findLinkedIssue(newThread);
-  if (!issueNumber) return; // never filed by the listener — nothing to close
+  if (!issueNumber) {
+    logInfo('closure: 100% Complete but no linked issue found', { thread: newThread.id });
+    return; // never filed by the listener — nothing to close
+  }
 
   try {
     const threadUrl = `https://discord.com/channels/${newThread.guildId}/${newThread.id}`;
