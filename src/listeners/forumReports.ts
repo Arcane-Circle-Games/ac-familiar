@@ -2,22 +2,32 @@
  * Forum report ingestion → GitHub issues.
  *
  * When a user opens a post in one of the configured report forum channels
- * (customer `feedback-and-bug-reports`, staff `staff-bugs-and-requests`), file
- * it as a GitHub issue on GITHUB_BUG_REPO and reply in the thread with the
- * issue link. The automatic counterpart to the manual `/bug` command.
+ * (customer `feedback-and-bug-reports`, staff `staff-bugs-and-requests`) AND the
+ * post is tagged **Bug** or **Request**, file it as a GitHub issue on
+ * GITHUB_BUG_REPO, react ⚙️ on the post to show it was noticed, and reply in the
+ * thread with the issue link. The automatic counterpart to the manual `/bug`.
  *
- * Labels: always `discord-report` + a source label (`customer` / `staff`), plus
- * a type label derived from the post's Discord forum TAG (Bug → bug,
- * Request → enhancement, Help → question). Workflow/status tags (Acknowledged,
- * % Complete, Update, Discussion) are not turned into labels but are recorded in
- * the issue body.
+ * Only Bug/Request posts are filed — Help, Update, Discussion, status-only, and
+ * untagged posts are ignored (no issue, no reaction).
  *
- * Phase 1 of the ac-familiar operational spec. One issue per thread.
+ * Labels: `discord-report` + source (`customer`/`staff`) + type (Bug→bug,
+ * Request→enhancement). All applied forum tags are recorded in the issue body.
  */
 import { ThreadChannel, ChannelType } from 'discord.js';
 import { createBugIssue } from '../services/github';
 import { config } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
+
+const NOTICED_REACTION = '⚙️';
+
+/** Forum tags (lowercased) that cause a post to be filed. */
+const TRIGGER_TAGS = new Set(['bug', 'request']);
+
+/** Trigger tag → GitHub type label. */
+const TAG_LABEL_MAP: Record<string, string> = {
+  bug: 'bug',
+  request: 'enhancement'
+};
 
 /** Which report forum a thread belongs to (by parent channel id). */
 function forumSource(parentId: string | null): 'customer' | 'staff' | null {
@@ -27,31 +37,26 @@ function forumSource(parentId: string | null): 'customer' | 'staff' | null {
   return null;
 }
 
-/** Discord forum TYPE tag → GitHub label. Status/workflow tags are excluded. */
-const TAG_LABEL_MAP: Record<string, string> = {
-  bug: 'bug',
-  request: 'enhancement',
-  help: 'question'
-};
-
 /**
- * Resolve the post's applied forum tags to their names, and the subset that
- * maps to GitHub labels. Best-effort: returns empty on any uncertainty.
+ * Resolve the post's applied forum tag names. Best-effort: fetches the parent
+ * forum if it isn't cached, returns [] on any uncertainty.
  */
-function resolveTags(thread: ThreadChannel): { names: string[]; labels: string[] } {
+async function resolveTagNames(thread: ThreadChannel): Promise<string[]> {
   try {
-    const parent = thread.parent;
-    if (!parent || parent.type !== ChannelType.GuildForum) return { names: [], labels: [] };
+    let parent = thread.parent;
+    if ((!parent || parent.type !== ChannelType.GuildForum) && thread.parentId) {
+      const fetched = await thread.guild?.channels
+        .fetch(thread.parentId)
+        .catch(() => null);
+      if (fetched && fetched.type === ChannelType.GuildForum) parent = fetched;
+    }
+    if (!parent || parent.type !== ChannelType.GuildForum) return [];
     const byId = new Map(parent.availableTags.map((t) => [t.id, t.name]));
-    const names = (thread.appliedTags ?? [])
+    return (thread.appliedTags ?? [])
       .map((id) => byId.get(id))
       .filter((n): n is string => Boolean(n));
-    const labels = names
-      .map((n) => TAG_LABEL_MAP[n.toLowerCase()])
-      .filter((l): l is string => Boolean(l));
-    return { names, labels };
   } catch {
-    return { names: [], labels: [] };
+    return [];
   }
 }
 
@@ -73,15 +78,34 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
   const source = forumSource(thread.parentId);
   if (!source) return;
 
+  const tagNames = await resolveTagNames(thread);
+  const lowered = tagNames.map((n) => n.toLowerCase());
+
+  // Only file Bug / Request posts. Everything else (Help, Update, Discussion,
+  // status-only, untagged) is ignored — no issue, no reaction.
+  if (!lowered.some((t) => TRIGGER_TAGS.has(t))) return;
+
   try {
     const starter = await fetchStarter(thread);
+
+    // Mark as noticed before filing (best-effort — needs Add Reactions).
+    if (starter) {
+      try {
+        await starter.react(NOTICED_REACTION);
+      } catch {
+        /* no Add Reactions perm — non-fatal */
+      }
+    }
+
     const reporter = starter?.author?.username ?? `user ${thread.ownerId ?? 'unknown'}`;
     const description = starter?.content?.trim() || '_(no description provided)_';
     const title = thread.name.slice(0, 120);
     const threadUrl = `https://discord.com/channels/${thread.guildId}/${thread.id}`;
-    const { names: tagNames, labels: tagLabels } = resolveTags(thread);
 
-    const labels = Array.from(new Set(['discord-report', source, ...tagLabels]));
+    const typeLabels = lowered
+      .map((t) => TAG_LABEL_MAP[t])
+      .filter((l): l is string => Boolean(l));
+    const labels = Array.from(new Set(['discord-report', source, ...typeLabels]));
 
     const body = [
       description,
