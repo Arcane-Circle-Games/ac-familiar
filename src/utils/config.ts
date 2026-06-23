@@ -73,9 +73,10 @@ const configSchema = z.object({
   GITHUB_BUG_REPO: z.string().default('Arcane-Circle-Games/ac-mvp'),
 
   // Report forum channels → GitHub issues (auto-ingest). Posts in these forum
-  // channels are filed as issues on GITHUB_BUG_REPO. Unset = ingestion off.
-  BUG_FORUM_CHANNEL_ID: z.string().optional(),
-  FEEDBACK_FORUM_CHANNEL_ID: z.string().optional()
+  // channels are filed as issues on GITHUB_BUG_REPO, labelled by source +
+  // forum tag. Unset = ingestion off.
+  CUSTOMER_FORUM_CHANNEL_ID: z.string().optional(), // feedback-and-bug-reports
+  STAFF_FORUM_CHANNEL_ID: z.string().optional() // staff-bugs-and-requests
 });
 
 const parseConfig = () => {

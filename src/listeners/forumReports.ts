@@ -2,31 +2,60 @@
  * Forum report ingestion → GitHub issues.
  *
  * When a user opens a post in one of the configured report forum channels
- * (bug reports or feedback/feature requests), file it as a GitHub issue on
- * GITHUB_BUG_REPO and reply in the thread with the issue link. This is the
- * automatic counterpart to the manual `/bug` command — no linked-account gate,
- * because forum access is already controlled by Discord permissions.
+ * (customer `feedback-and-bug-reports`, staff `staff-bugs-and-requests`), file
+ * it as a GitHub issue on GITHUB_BUG_REPO and reply in the thread with the
+ * issue link. The automatic counterpart to the manual `/bug` command.
  *
- * Phase 1 of the ac-familiar operational spec (forum → GitHub). One issue per
- * thread: threadCreate fires once per post, so there is no dedup loop to manage.
+ * Labels: always `discord-report` + a source label (`customer` / `staff`), plus
+ * a type label derived from the post's Discord forum TAG (Bug → bug,
+ * Request → enhancement, Help → question). Workflow/status tags (Acknowledged,
+ * % Complete, Update, Discussion) are not turned into labels but are recorded in
+ * the issue body.
+ *
+ * Phase 1 of the ac-familiar operational spec. One issue per thread.
  */
-import { ThreadChannel } from 'discord.js';
+import { ThreadChannel, ChannelType } from 'discord.js';
 import { createBugIssue } from '../services/github';
 import { config } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
 
-/** Maps a forum channel id to the label its posts are filed under. */
-function channelLabel(parentId: string | null): string | null {
+/** Which report forum a thread belongs to (by parent channel id). */
+function forumSource(parentId: string | null): 'customer' | 'staff' | null {
   if (!parentId) return null;
-  if (parentId === config.BUG_FORUM_CHANNEL_ID) return 'bug';
-  if (parentId === config.FEEDBACK_FORUM_CHANNEL_ID) return 'enhancement';
+  if (parentId === config.CUSTOMER_FORUM_CHANNEL_ID) return 'customer';
+  if (parentId === config.STAFF_FORUM_CHANNEL_ID) return 'staff';
   return null;
 }
 
+/** Discord forum TYPE tag → GitHub label. Status/workflow tags are excluded. */
+const TAG_LABEL_MAP: Record<string, string> = {
+  bug: 'bug',
+  request: 'enhancement',
+  help: 'question'
+};
+
 /**
- * The starter message can lag the threadCreate event by a moment, so retry a
- * few times before giving up and filing with just the title.
+ * Resolve the post's applied forum tags to their names, and the subset that
+ * maps to GitHub labels. Best-effort: returns empty on any uncertainty.
  */
+function resolveTags(thread: ThreadChannel): { names: string[]; labels: string[] } {
+  try {
+    const parent = thread.parent;
+    if (!parent || parent.type !== ChannelType.GuildForum) return { names: [], labels: [] };
+    const byId = new Map(parent.availableTags.map((t) => [t.id, t.name]));
+    const names = (thread.appliedTags ?? [])
+      .map((id) => byId.get(id))
+      .filter((n): n is string => Boolean(n));
+    const labels = names
+      .map((n) => TAG_LABEL_MAP[n.toLowerCase()])
+      .filter((l): l is string => Boolean(l));
+    return { names, labels };
+  } catch {
+    return { names: [], labels: [] };
+  }
+}
+
+/** Starter message can lag threadCreate; retry briefly before filing title-only. */
 async function fetchStarter(thread: ThreadChannel) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -41,10 +70,8 @@ async function fetchStarter(thread: ThreadChannel) {
 }
 
 export async function handleForumReport(thread: ThreadChannel): Promise<void> {
-  // Gate purely on the parent forum channel id — that is what marks a thread as
-  // one of our report channels. (Avoids depending on parent being cached.)
-  const label = channelLabel(thread.parentId);
-  if (!label) return;
+  const source = forumSource(thread.parentId);
+  if (!source) return;
 
   try {
     const starter = await fetchStarter(thread);
@@ -52,20 +79,22 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     const description = starter?.content?.trim() || '_(no description provided)_';
     const title = thread.name.slice(0, 120);
     const threadUrl = `https://discord.com/channels/${thread.guildId}/${thread.id}`;
+    const { names: tagNames, labels: tagLabels } = resolveTags(thread);
+
+    const labels = Array.from(new Set(['discord-report', source, ...tagLabels]));
 
     const body = [
       description,
       '',
       '---',
-      `*Filed automatically from a Discord forum post by **${reporter}**.*`,
+      `*Filed automatically from a **${source}** Discord forum post by **${reporter}**.*`,
+      tagNames.length ? `Forum tags: ${tagNames.join(', ')}` : null,
       `Thread: ${threadUrl}`
-    ].join('\n');
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n');
 
-    const issue = await createBugIssue({
-      title,
-      body,
-      labels: [label, 'discord-report']
-    });
+    const issue = await createBugIssue({ title, body, labels });
 
     await thread.send(
       `Logged as **#${issue.number}** on GitHub — follow it here: ${issue.html_url}`
@@ -73,13 +102,13 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     logInfo('Forum report filed as GitHub issue', {
       thread: thread.id,
       issue: issue.number,
-      label
+      source,
+      labels
     });
   } catch (err) {
     logError('Failed to file forum report as GitHub issue', err as Error, {
       thread: thread.id
     });
-    // Best-effort: tell the reporter it didn't auto-file so it isn't silently lost.
     try {
       await thread.send(
         'Could not auto-file this to GitHub — a developer will pick it up manually.'
