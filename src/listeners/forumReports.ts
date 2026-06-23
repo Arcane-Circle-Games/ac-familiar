@@ -13,12 +13,15 @@
  * Labels: `discord-report` + source (`customer`/`staff`) + type (Bug→bug,
  * Request→enhancement). All applied forum tags are recorded in the issue body.
  */
-import { ThreadChannel, ChannelType } from 'discord.js';
-import { createBugIssue } from '../services/github';
+import { ThreadChannel, ChannelType, ForumChannel } from 'discord.js';
+import { createBugIssue, closeIssueIfOpen } from '../services/github';
 import { config } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
 
 const NOTICED_REACTION = '⚙️';
+
+/** Forum tag (lowercased) that closes the linked GitHub issue when applied. */
+const COMPLETE_TAG = '100% complete';
 
 /** Forum tags (lowercased) that cause a post to be filed. */
 const TRIGGER_TAGS = new Set(['bug', 'request']);
@@ -140,5 +143,86 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     } catch {
       /* ignore secondary failure */
     }
+  }
+}
+
+/** Resolve a thread's parent forum channel, fetching it if not cached. */
+async function getParentForum(thread: ThreadChannel): Promise<ForumChannel | null> {
+  let parent = thread.parent;
+  if ((!parent || parent.type !== ChannelType.GuildForum) && thread.parentId) {
+    const fetched = await thread.guild?.channels.fetch(thread.parentId).catch(() => null);
+    if (fetched && fetched.type === ChannelType.GuildForum) parent = fetched;
+  }
+  return parent && parent.type === ChannelType.GuildForum ? (parent as ForumChannel) : null;
+}
+
+/** The forum's "100% Complete" tag id, or null. */
+async function getCompleteTagId(thread: ThreadChannel): Promise<string | null> {
+  const forum = await getParentForum(thread);
+  if (!forum) return null;
+  const tag = forum.availableTags.find((t) => t.name.toLowerCase() === COMPLETE_TAG);
+  return tag?.id ?? null;
+}
+
+/**
+ * Find the GitHub issue this thread was filed as, by scanning for the issue URL
+ * the bot left in its "Logged as #N" reply. null if the thread was never filed
+ * (e.g. a pre-listener post, or a non-Bug/Request post that was ignored).
+ */
+async function findLinkedIssue(thread: ThreadChannel): Promise<number | null> {
+  try {
+    const msgs = await thread.messages.fetch({ limit: 50 });
+    for (const m of msgs.values()) {
+      const match = m.content.match(/\/issues\/(\d+)/);
+      if (match && match[1]) return parseInt(match[1], 10);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * Close the linked GitHub issue when a report post is marked **100% Complete**
+ * in Discord. One-directional (Discord → GitHub only). Fires on the tag
+ * transition, finds the issue from the bot's own reply, and closes it if open.
+ */
+export async function handleForumClosure(
+  oldThread: ThreadChannel,
+  newThread: ThreadChannel
+): Promise<void> {
+  if (!forumSource(newThread.parentId)) return;
+
+  const completeId = await getCompleteTagId(newThread);
+  if (!completeId) return;
+
+  const nowComplete = (newThread.appliedTags ?? []).includes(completeId);
+  const wasComplete = (oldThread.appliedTags ?? []).includes(completeId);
+  if (!nowComplete || wasComplete) return; // only on the transition to complete
+
+  const issueNumber = await findLinkedIssue(newThread);
+  if (!issueNumber) return; // never filed by the listener — nothing to close
+
+  try {
+    const threadUrl = `https://discord.com/channels/${newThread.guildId}/${newThread.id}`;
+    const result = await closeIssueIfOpen(
+      issueNumber,
+      `Closed from Discord — the forum post was marked **100% Complete**.\nThread: ${threadUrl}`
+    );
+    if (result === 'closed') {
+      await newThread
+        .send(`Closed issue **#${issueNumber}** — marked 100% Complete.`)
+        .catch(() => {});
+    }
+    logInfo('100% Complete tag → issue close', {
+      thread: newThread.id,
+      issue: issueNumber,
+      result
+    });
+  } catch (err) {
+    logError('Failed to close issue from 100% Complete tag', err as Error, {
+      thread: newThread.id,
+      issue: issueNumber
+    });
   }
 }
