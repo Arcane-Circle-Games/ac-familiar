@@ -70,7 +70,13 @@ const configSchema = z.object({
   // GitHub personal access token (or fine-grained token) with `issues: write` scope
   // on the GITHUB_BUG_REPO. If unset, the /bug command will fail at submission time.
   GITHUB_TOKEN: z.string().optional(),
-  GITHUB_BUG_REPO: z.string().default('Arcane-Circle-Games/ac-mvp')
+  GITHUB_BUG_REPO: z.string().default('Arcane-Circle-Games/ac-mvp'),
+
+  // Report forum channels → GitHub issues (auto-ingest). Posts in these forum
+  // channels are filed as issues on GITHUB_BUG_REPO, labelled by source +
+  // forum tag. Unset = ingestion off.
+  CUSTOMER_FORUM_CHANNEL_ID: z.string().optional(), // feedback-and-bug-reports
+  STAFF_FORUM_CHANNEL_ID: z.string().optional() // staff-bugs-and-requests
 });
 
 const parseConfig = () => {
