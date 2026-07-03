@@ -14,7 +14,7 @@
  * Request→enhancement). All applied forum tags are recorded in the issue body.
  */
 import { ThreadChannel, ChannelType, ForumChannel } from 'discord.js';
-import { createBugIssue, closeIssueIfOpen } from '../services/github';
+import { createBugIssue, closeIssueIfOpen, findIssueByThreadUrl } from '../services/github';
 import { config } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
 
@@ -131,8 +131,12 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     const issue = await createBugIssue({ title, body, labels });
     filedIssues.set(thread.id, issue.number);
 
+    // Public (customer) forum gets a friendly, non-technical acknowledgement;
+    // the staff forum keeps the GitHub link for triage.
     await thread.send(
-      `Logged as **#${issue.number}** on GitHub — follow it here: ${issue.html_url}`
+      source === 'staff'
+        ? `Logged as **#${issue.number}** on GitHub — follow it here: ${issue.html_url}`
+        : `Thanks for the report — we've logged this and the team is on it. We'll update this post when it's resolved.`
     );
     logInfo('Forum report filed as GitHub issue', {
       thread: thread.id,
@@ -191,7 +195,10 @@ async function findLinkedIssue(thread: ThreadChannel): Promise<number | null> {
       thread: thread.id
     });
   }
-  return null;
+  // Fallback: customer replies no longer embed the issue link, so find the
+  // issue by the thread URL its body always carries.
+  const threadUrl = `https://discord.com/channels/${thread.guildId}/${thread.id}`;
+  return findIssueByThreadUrl(threadUrl);
 }
 
 /**

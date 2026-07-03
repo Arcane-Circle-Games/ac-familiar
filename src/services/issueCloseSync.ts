@@ -12,6 +12,7 @@
  */
 import { Client, ChannelType, ThreadChannel, ForumChannel } from 'discord.js';
 import { logInfo, logError } from '../utils/logger';
+import { config } from '../utils/config';
 
 const COMPLETE_TAG = '100% complete';
 /** Forum starter reactions: ⚙️ is set by forumReports on file; ✅ on resolution. */
@@ -65,20 +66,25 @@ export async function syncClosedIssueToDiscord(
 
     const me = client.user?.id;
 
+    // Public (customer) forum gets a friendly, non-technical message; the staff
+    // forum keeps the GitHub reference for triage.
+    const isStaff = parent?.id === config.STAFF_FORUM_CHANNEL_ID;
+    const resolvedReply = isStaff
+      ? `Resolved and closed on GitHub — issue **#${issue.number}**. This report is complete.`
+      : `This has been resolved. Thanks for the report.`;
+
     // Post the resolved reply once. A prior run may have replied but failed to
     // tag/archive (e.g. before Manage Threads was granted) — don't double-post.
     let alreadyReplied = false;
     try {
       const recent = await thread.messages.fetch({ limit: 20 });
-      alreadyReplied = recent.some(
-        (m) => m.author.id === me && m.content.includes(`issue **#${issue.number}**`)
-      );
+      alreadyReplied = recent.some((m) => m.author.id === me && /resolved/i.test(m.content));
     } catch {
       /* no Read Message History — fall through; at worst a duplicate reply */
     }
     if (!alreadyReplied) {
       await thread
-        .send(`Resolved and closed on GitHub — issue **#${issue.number}**. This report is complete.`)
+        .send(resolvedReply)
         .catch((e) => logError('issue-sync: could not post resolved reply', e as Error, { thread: thread.id }));
     }
 

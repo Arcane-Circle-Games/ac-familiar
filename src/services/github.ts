@@ -129,6 +129,21 @@ export async function closeIssueIfOpen(
   return 'closed';
 }
 
+/** Find the issue whose body carries this Discord thread URL. null if none. */
+export async function findIssueByThreadUrl(threadUrl: string): Promise<number | null> {
+  if (!config.GITHUB_TOKEN) return null;
+  const q = encodeURIComponent(`repo:${config.GITHUB_BUG_REPO} in:body "${threadUrl}"`);
+  const url = `https://api.github.com/search/issues?q=${q}&per_page=1`;
+  try {
+    const res = await fetch(url, { headers: ghHeaders() });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { items?: Array<{ number: number }> };
+    return data.items?.[0]?.number ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface FullIssue {
   number: number;
   html_url: string;
