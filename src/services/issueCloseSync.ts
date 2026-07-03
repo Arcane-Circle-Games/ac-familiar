@@ -14,6 +14,9 @@ import { Client, ChannelType, ThreadChannel, ForumChannel } from 'discord.js';
 import { logInfo, logError } from '../utils/logger';
 
 const COMPLETE_TAG = '100% complete';
+/** Forum starter reactions: ⚙️ is set by forumReports on file; ✅ on resolution. */
+const NOTICED_REACTION = '⚙️';
+const RESOLVED_REACTION = '✅';
 
 export interface ClosedIssue {
   number: number;
@@ -55,20 +58,43 @@ export async function syncClosedIssueToDiscord(
       ? parent.availableTags.find((t) => t.name.toLowerCase() === COMPLETE_TAG)?.id ?? null
       : null;
 
-    // Idempotency: already marked complete → nothing to do (don't re-post).
-    if (completeTagId && (thread.appliedTags ?? []).includes(completeTagId)) {
+    // Already synced (archived, or complete-tagged) → nothing to do.
+    if (thread.archived || (completeTagId && (thread.appliedTags ?? []).includes(completeTagId))) {
       return 'already';
     }
 
-    // Un-archive if needed so the reply + tag land, then re-archive at the end.
-    if (thread.archived) {
-      await thread.setArchived(false).catch(() => {});
+    const me = client.user?.id;
+
+    // Post the resolved reply once. A prior run may have replied but failed to
+    // tag/archive (e.g. before Manage Threads was granted) — don't double-post.
+    let alreadyReplied = false;
+    try {
+      const recent = await thread.messages.fetch({ limit: 20 });
+      alreadyReplied = recent.some(
+        (m) => m.author.id === me && m.content.includes(`issue **#${issue.number}**`)
+      );
+    } catch {
+      /* no Read Message History — fall through; at worst a duplicate reply */
+    }
+    if (!alreadyReplied) {
+      await thread
+        .send(`Resolved and closed on GitHub — issue **#${issue.number}**. This report is complete.`)
+        .catch((e) => logError('issue-sync: could not post resolved reply', e as Error, { thread: thread.id }));
     }
 
-    await thread
-      .send(`Resolved and closed on GitHub — issue **#${issue.number}**. This report is complete.`)
-      .catch((e) => logError('issue-sync: could not post resolved reply', e as Error, { thread: thread.id }));
+    // Swap the forum starter's reaction: drop our ⚙️ "noticed", add ✅ "done".
+    try {
+      const starter = await thread.fetchStarterMessage();
+      if (starter && me) {
+        const gear = starter.reactions.cache.get(NOTICED_REACTION);
+        if (gear) await gear.users.remove(me).catch(() => {});
+        await starter.react(RESOLVED_REACTION).catch(() => {});
+      }
+    } catch (e) {
+      logError('issue-sync: could not swap reactions', e as Error, { thread: thread.id });
+    }
 
+    // Apply the 100% Complete tag (mirrors the Discord→GitHub close).
     if (completeTagId) {
       const tags = Array.from(new Set([...(thread.appliedTags ?? []), completeTagId]));
       await thread
@@ -76,6 +102,7 @@ export async function syncClosedIssueToDiscord(
         .catch((e) => logError('issue-sync: could not apply complete tag', e as Error, { thread: thread.id }));
     }
 
+    // Archive last — edits/reactions can fail on an already-archived thread.
     await thread
       .setArchived(true)
       .catch((e) => logError('issue-sync: could not archive thread', e as Error, { thread: thread.id }));
