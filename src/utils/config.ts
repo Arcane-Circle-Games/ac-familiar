@@ -71,6 +71,10 @@ const configSchema = z.object({
   // on the GITHUB_BUG_REPO. If unset, the /bug command will fail at submission time.
   GITHUB_TOKEN: z.string().optional(),
   GITHUB_BUG_REPO: z.string().default('Arcane-Circle-Games/ac-mvp'),
+  // Shared secret gating the GitHub issue-close webhook + manual resync endpoint.
+  // GitHub webhook: append ?key=<secret> to the payload URL. Resync: send it as
+  // ?key= or an x-webhook-secret header. If unset, both endpoints return 503.
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
   // Report forum channels → GitHub issues (auto-ingest). Posts in these forum
   // channels are filed as issues on GITHUB_BUG_REPO, labelled by source +

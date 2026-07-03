@@ -128,3 +128,28 @@ export async function closeIssueIfOpen(
   logInfo('Closed GitHub issue from Discord', { issueNumber });
   return 'closed';
 }
+
+export interface FullIssue {
+  number: number;
+  html_url: string;
+  title: string;
+  body: string | null;
+  state: string;
+}
+
+/** Fetch a single issue (number, body, state) from the bug repo; null if 404. */
+export async function getIssue(issueNumber: number): Promise<FullIssue | null> {
+  if (!config.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN is not configured');
+  const url = `https://api.github.com/repos/${config.GITHUB_BUG_REPO}/issues/${issueNumber}`;
+  const res = await fetch(url, { headers: ghHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub GET issue ${issueNumber} returned ${res.status}`);
+  const i = (await res.json()) as {
+    number: number;
+    html_url: string;
+    title: string;
+    body: string | null;
+    state: string;
+  };
+  return { number: i.number, html_url: i.html_url, title: i.title, body: i.body ?? null, state: i.state };
+}
