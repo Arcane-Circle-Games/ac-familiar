@@ -29,6 +29,8 @@ import {
 } from '../../utils/embeds/notifications';
 import { ArcaneBot } from '../../bot';
 import DMService from '../discord/DMService';
+import { getIssue } from '../../services/github';
+import { syncClosedIssueToDiscord, ClosedIssue } from '../../services/issueCloseSync';
 
 export class WebhookListener {
   private app: express.Express;
@@ -49,6 +51,22 @@ export class WebhookListener {
     this.bot = bot;
     this.dmService = new DMService(bot.client);
     logger.info('Bot instance set for WebhookListener');
+  }
+
+  /** Shared secret gate for the GitHub issue-sync endpoints (?key= or header). */
+  private githubSyncAuthed(req: Request): boolean {
+    const secret = config.GITHUB_WEBHOOK_SECRET;
+    if (!secret) return false;
+    const provided =
+      (req.query['key'] as string | undefined) ||
+      (req.headers['x-webhook-secret'] as string | undefined);
+    return provided === secret;
+  }
+
+  /** Reflect one closed issue onto its Discord forum post (needs the bot client). */
+  private async syncClosedIssue(issue: ClosedIssue): Promise<string> {
+    if (!this.bot) return 'error';
+    return syncClosedIssueToDiscord(this.bot.client, issue);
   }
 
   /**
@@ -118,6 +136,59 @@ export class WebhookListener {
         logger.error('Error building /stats payload', error as Error);
         return res.status(500).json({ error: 'Failed to build stats' });
       }
+    });
+
+    // GitHub `issues.closed` webhook → reflect the closure onto the Discord
+    // forum post. Auth via ?key=<GITHUB_WEBHOOK_SECRET> on the payload URL.
+    this.app.post('/webhooks/github', async (req: Request, res: Response): Promise<any> => {
+      if (!this.githubSyncAuthed(req)) {
+        return res
+          .status(config.GITHUB_WEBHOOK_SECRET ? 401 : 503)
+          .json({ error: config.GITHUB_WEBHOOK_SECRET ? 'unauthorized' : 'github sync not configured' });
+      }
+      try {
+        const event = req.headers['x-github-event'] as string | undefined;
+        const body = req.body as { action?: string; issue?: ClosedIssue };
+        if (event !== 'issues' || body.action !== 'closed' || !body.issue) {
+          return res.status(200).json({ ignored: true });
+        }
+        const result = await this.syncClosedIssue(body.issue);
+        logger.info('GitHub issue-close webhook processed', { issue: body.issue.number, result });
+        return res.status(200).json({ issue: body.issue.number, result });
+      } catch (error) {
+        logger.error('Error processing GitHub issue webhook', error as Error);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    // Manual resync: reflect an explicit list of already-closed issues onto
+    // Discord. POST { issues: number[] }. Backfills / test-runs the reverse sync.
+    this.app.post('/webhooks/github/resync', async (req: Request, res: Response): Promise<any> => {
+      if (!this.githubSyncAuthed(req)) {
+        return res
+          .status(config.GITHUB_WEBHOOK_SECRET ? 401 : 503)
+          .json({ error: config.GITHUB_WEBHOOK_SECRET ? 'unauthorized' : 'github sync not configured' });
+      }
+      const numbers = (req.body?.issues ?? []) as number[];
+      if (!Array.isArray(numbers) || numbers.length === 0) {
+        return res.status(400).json({ error: 'body.issues must be a non-empty number[]' });
+      }
+      const results: Record<number, string> = {};
+      for (const n of numbers) {
+        try {
+          const issue = await getIssue(n);
+          if (!issue) {
+            results[n] = 'not-found';
+            continue;
+          }
+          results[n] = await this.syncClosedIssue(issue);
+        } catch (err) {
+          logger.error('resync: issue failed', err as Error, { issue: n });
+          results[n] = 'error';
+        }
+      }
+      logger.info('GitHub issue resync complete', { results });
+      return res.status(200).json({ results });
     });
 
     // Notification webhook handler
