@@ -2,16 +2,17 @@
  * Forum report ingestion → GitHub issues.
  *
  * When a user opens a post in one of the configured report forum channels
- * (customer `feedback-and-bug-reports`, staff `staff-bugs-and-requests`) AND the
- * post is tagged **Bug** or **Request**, file it as a GitHub issue on
- * GITHUB_BUG_REPO, react ⚙️ on the post to show it was noticed, and reply in the
- * thread with the issue link. The automatic counterpart to the manual `/bug`.
+ * (customer `feedback-and-bug-reports`, staff `staff-bugs-and-requests`), file it
+ * as a GitHub issue on GITHUB_BUG_REPO, react ⚙️ on the post to show it was
+ * noticed, and reply in the thread with the issue link. The automatic
+ * counterpart to the manual `/bug`.
  *
- * Only Bug/Request posts are filed — Help, Update, Discussion, status-only, and
- * untagged posts are ignored (no issue, no reaction).
+ * Every post in those forums is filed regardless of tag — Help, Update,
+ * Discussion, status-only, and untagged posts included.
  *
- * Labels: `discord-report` + source (`customer`/`staff`) + type (Bug→bug,
- * Request→enhancement). All applied forum tags are recorded in the issue body.
+ * Labels: `discord-report` + source (`customer`/`staff`) + type when the post
+ * carries a recognised tag (Bug→bug, Request→enhancement). All applied forum
+ * tags are recorded in the issue body.
  */
 import { ThreadChannel, ChannelType, ForumChannel } from 'discord.js';
 import { createBugIssue, closeIssueIfOpen, findIssueByThreadUrl } from '../services/github';
@@ -30,10 +31,7 @@ const COMPLETE_TAG = '100% complete';
  */
 const filedIssues = new Map<string, number>();
 
-/** Forum tags (lowercased) that cause a post to be filed. */
-const TRIGGER_TAGS = new Set(['bug', 'request']);
-
-/** Trigger tag → GitHub type label. */
+/** Forum tag (lowercased) → GitHub type label. Absent tags just add no label. */
 const TAG_LABEL_MAP: Record<string, string> = {
   bug: 'bug',
   request: 'enhancement'
@@ -90,10 +88,6 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
 
   const tagNames = await resolveTagNames(thread);
   const lowered = tagNames.map((n) => n.toLowerCase());
-
-  // Only file Bug / Request posts. Everything else (Help, Update, Discussion,
-  // status-only, untagged) is ignored — no issue, no reaction.
-  if (!lowered.some((t) => TRIGGER_TAGS.has(t))) return;
 
   try {
     const starter = await fetchStarter(thread);
@@ -179,7 +173,7 @@ async function getCompleteTagId(thread: ThreadChannel): Promise<string | null> {
 /**
  * Find the GitHub issue this thread was filed as, by scanning for the issue URL
  * the bot left in its "Logged as #N" reply. null if the thread was never filed
- * (e.g. a pre-listener post, or a non-Bug/Request post that was ignored).
+ * (e.g. a pre-listener post, or one whose filing errored).
  */
 async function findLinkedIssue(thread: ThreadChannel): Promise<number | null> {
   const cached = filedIssues.get(thread.id);
