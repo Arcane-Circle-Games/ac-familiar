@@ -43,24 +43,11 @@ export class GameAnnouncementScheduler {
       return;
     }
 
-    // Validate role ID if configured (fail-soft — log warning, don't block startup)
+    // Validate role ID if configured (fail-soft — log warning, don't block
+    // startup). Fired and forgotten: start() is synchronous and must not gate
+    // the cron registration on a Discord round-trip.
     if (config.GAME_ANNOUNCEMENT_ROLE_ID) {
-      try {
-        const guild = this.bot.client.guilds.cache.first();
-        if (guild) {
-          const role = guild.roles.cache.get(config.GAME_ANNOUNCEMENT_ROLE_ID);
-          if (!role) {
-            logError(
-              `GameAnnouncementScheduler: GAME_ANNOUNCEMENT_ROLE_ID ${config.GAME_ANNOUNCEMENT_ROLE_ID} not found in guild`,
-              new Error('Role not found')
-            );
-          } else {
-            logInfo(`GameAnnouncementScheduler: Will ping role "${role.name}" (${role.id})`);
-          }
-        }
-      } catch (error) {
-        logError('GameAnnouncementScheduler: Failed to validate role', error as Error);
-      }
+      void this.validateAnnouncementRole();
     }
 
     // Build cron schedule from interval hours (e.g., 3 hours = "0 */3 * * *")
@@ -174,6 +161,64 @@ export class GameAnnouncementScheduler {
       logError('GameAnnouncementScheduler: Error in checkForNewGames', error as Error);
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  /**
+   * Confirm the configured LFG role exists in the guild that actually owns the
+   * announcement channel.
+   *
+   * This used to read `client.guilds.cache.first()` — an arbitrary entry from a
+   * Map the bot now fills with 13 guilds, since guild-specific announcements
+   * and command scoping landed. The role is only ever mentioned in
+   * GAME_ANNOUNCEMENT_CHANNEL_ID, so that channel's guild is the only one worth
+   * checking; `.first()` was validating against whichever server happened to be
+   * cached first and logging "Role not found" on every boot for a role that was
+   * present, mentionable, and working. Same reasoning as the WebhookListener
+   * role-ping fix (#20): resolve by channel, not by a standalone guild handle.
+   *
+   * DISCORD_GUILD_ID is deliberately not used here — in production it points at
+   * the Arcane Familiar Testbed, not the guild hosting #looking-for-games.
+   */
+  private async validateAnnouncementRole(): Promise<void> {
+    const roleId = config.GAME_ANNOUNCEMENT_ROLE_ID;
+    const channelId = config.GAME_ANNOUNCEMENT_CHANNEL_ID;
+
+    try {
+      const channel = await this.bot.client.channels.fetch(channelId!);
+
+      if (!channel || !(channel instanceof TextChannel)) {
+        logError(
+          `GameAnnouncementScheduler: cannot validate role ${roleId} — announcement channel ${channelId} is missing or not a text channel`,
+          new Error('Announcement channel unavailable')
+        );
+        return;
+      }
+
+      // fetch(), not cache.get() — the role cache is not guaranteed warm at boot.
+      const role = await channel.guild.roles.fetch(roleId);
+
+      if (!role) {
+        logError(
+          `GameAnnouncementScheduler: GAME_ANNOUNCEMENT_ROLE_ID ${roleId} not found in guild "${channel.guild.name}" (${channel.guild.id}), which owns announcement channel ${channelId}`,
+          new Error('Role not found')
+        );
+        return;
+      }
+
+      if (!role.mentionable) {
+        logError(
+          `GameAnnouncementScheduler: role "${role.name}" (${role.id}) is not mentionable — the ping will render but not notify`,
+          new Error('Role not mentionable')
+        );
+        return;
+      }
+
+      logInfo(
+        `GameAnnouncementScheduler: Will ping role "${role.name}" (${role.id}) in guild "${channel.guild.name}"`
+      );
+    } catch (error) {
+      logError('GameAnnouncementScheduler: Failed to validate role', error as Error);
     }
   }
 
