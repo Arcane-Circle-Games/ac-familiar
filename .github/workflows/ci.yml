@@ -1,0 +1,35 @@
+name: CI
+
+# Nothing verified a pull request before this existed — the repo had no
+# .github/workflows at all, and Railway only builds `main` on push, so the
+# first signal that a PR broke the build was production.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # The transcription stack's optional deps (@deepgram/sdk, davey, native
+      # audio bindings) are not needed to typecheck or lint and are slow and
+      # flaky to build on CI runners.
+      - name: Install
+        run: npm ci --omit=optional
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
