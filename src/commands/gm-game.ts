@@ -439,7 +439,7 @@ async function handleGameEdit(interaction: ChatInputCommandInteraction) {
     // Verify user is authenticated
     await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
 
-    let updateData: any = {};
+    const updateData: any = {};
 
     if (field === 'max-players') {
       updateData.maxPlayers = parseInt(value);

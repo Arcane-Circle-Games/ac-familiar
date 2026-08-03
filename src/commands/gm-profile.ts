@@ -113,7 +113,7 @@ async function handleProfileEdit(interaction: ChatInputCommandInteraction, field
   try {
     const user = await arcaneAPI.users.getUserByDiscordId(interaction.user.id);
 
-    let updateData: any = {};
+    const updateData: any = {};
 
     if (field === 'systems') {
       updateData.systems = value.split(',').map(s => s.trim());
