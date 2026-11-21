@@ -3,9 +3,10 @@
  *
  * When a user opens a post in one of the configured report forum channels
  * (customer `feedback-and-bug-reports`, staff `staff-bugs-and-requests`), file it
- * as a GitHub issue on GITHUB_BUG_REPO, react ⚙️ on the post to show it was
- * noticed, and reply in the thread with the issue link. The automatic
- * counterpart to the manual `/bug`.
+ * as a GitHub issue on GITHUB_BUG_REPO. Only once the issue is filed does the
+ * bot react ⚙️ on the post and reply in the thread (with the issue link on the
+ * staff forum). On failure the bot posts and reacts with nothing and only logs.
+ * The automatic counterpart to the manual `/bug`.
  *
  * Every post in those forums is filed regardless of tag — Help, Update,
  * Discussion, status-only, and untagged posts included.
@@ -92,15 +93,6 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
   try {
     const starter = await fetchStarter(thread);
 
-    // Mark as noticed before filing (best-effort — needs Add Reactions).
-    if (starter) {
-      try {
-        await starter.react(NOTICED_REACTION);
-      } catch {
-        /* no Add Reactions perm — non-fatal */
-      }
-    }
-
     const reporter = starter?.author?.username ?? `user ${thread.ownerId ?? 'unknown'}`;
     const description = starter?.content?.trim() || '_(no description provided)_';
     const title = thread.name.slice(0, 120);
@@ -125,6 +117,15 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     const issue = await createBugIssue({ title, body, labels });
     filedIssues.set(thread.id, issue.number);
 
+    // Mark as noticed only once the issue exists (best-effort — needs Add Reactions).
+    if (starter) {
+      try {
+        await starter.react(NOTICED_REACTION);
+      } catch {
+        /* no Add Reactions perm — non-fatal */
+      }
+    }
+
     // Public (customer) forum gets a friendly, non-technical acknowledgement;
     // the staff forum keeps the GitHub link for triage.
     await thread.send(
@@ -142,13 +143,6 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     logError('Failed to file forum report as GitHub issue', err as Error, {
       thread: thread.id
     });
-    try {
-      await thread.send(
-        'Could not auto-file this to GitHub — a developer will pick it up manually.'
-      );
-    } catch {
-      /* ignore secondary failure */
-    }
   }
 }
 
