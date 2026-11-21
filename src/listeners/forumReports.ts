@@ -92,15 +92,6 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
   try {
     const starter = await fetchStarter(thread);
 
-    // Mark as noticed before filing (best-effort — needs Add Reactions).
-    if (starter) {
-      try {
-        await starter.react(NOTICED_REACTION);
-      } catch {
-        /* no Add Reactions perm — non-fatal */
-      }
-    }
-
     const reporter = starter?.author?.username ?? `user ${thread.ownerId ?? 'unknown'}`;
     const description = starter?.content?.trim() || '_(no description provided)_';
     const title = thread.name.slice(0, 120);
@@ -125,6 +116,16 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     const issue = await createBugIssue({ title, body, labels });
     filedIssues.set(thread.id, issue.number);
 
+    // Mark as noticed only once the issue exists (best-effort — needs Add
+    // Reactions). A failed filing leaves no trace on the post.
+    if (starter) {
+      try {
+        await starter.react(NOTICED_REACTION);
+      } catch {
+        /* no Add Reactions perm — non-fatal */
+      }
+    }
+
     // Public (customer) forum gets a friendly, non-technical acknowledgement;
     // the staff forum keeps the GitHub link for triage.
     await thread.send(
@@ -142,13 +143,8 @@ export async function handleForumReport(thread: ThreadChannel): Promise<void> {
     logError('Failed to file forum report as GitHub issue', err as Error, {
       thread: thread.id
     });
-    try {
-      await thread.send(
-        'Could not auto-file this to GitHub — a developer will pick it up manually.'
-      );
-    } catch {
-      /* ignore secondary failure */
-    }
+    // Deliberately silent in Discord: if filing to GitHub fails, the bot posts
+    // nothing to the thread (Mike, 2026-11-20). The failure is logged above.
   }
 }
 
